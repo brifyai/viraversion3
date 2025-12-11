@@ -1,0 +1,226 @@
+# Gitignore principal para el proyecto VIRA
+# Este archivo protege el directorio raiz y todos los subdirectorios
+
+# =============================================
+# F5_TEST - Ignorar archivos pesados, rastrear codigo
+# =============================================
+F5_Test/venv/
+F5_Test/__pycache__/
+F5_Test/.env
+F5_Test/es_cl_female/
+F5_Test/es_cl_male/
+F5_Test/resultado_*.wav
+F5_Test/ref_*.wav
+F5_Test/temp_*.wav
+F5_Test/targets/*.wav
+F5_Test/targets/*.mp3
+F5_Test/*.zip
+
+# =============================================
+# ARCHIVOS SENSIBLES - NUNCA SUBIR AL REPOSITORIO
+# =============================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Archivos de configuracion con credenciales
+config/credentials.json
+config/secrets.json
+**/credentials.json
+**/secrets.json
+
+# Archivos temporales de editores
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# =============================================
+# ARCHIVOS DE IDE Y EDITORES
+# =============================================
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.atom/
+.brackets.json
+*.code-workspace
+
+# =============================================
+# DEPENDENCIAS Y BUILD
+# =============================================
+node_modules/
+.npm
+.yarn-integrity
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnpm-store/
+.next/
+dist/
+build/
+out/
+
+# =============================================
+# ARCHIVOS DE BASES DE DATOS LOCALES
+# =============================================
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# =============================================
+# ARCHIVOS DE COMPRESION
+# =============================================
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+*.bz2
+*.xz
+
+# =============================================
+# DOCUMENTOS Y ARCHIVOS DE OFICINA
+# =============================================
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+*.odt
+*.ods
+*.odp
+
+# =============================================
+# ARCHIVOS DE PYTHON
+# =============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+**/venv/
+venv_xtts/
+env/
+.venv_xtts/
+entorno/
+*.egg-info/
+*.egg
+
+# =============================================
+# ARCHIVOS DE AUDIO GRANDES (en raiz)
+# =============================================
+/*.mp3
+/*.wav
+/*.flac
+/*.ogg
+/*.m4a
+
+# =============================================
+# ARCHIVOS DE TYPESCRIPT/JAVASCRIPT
+# =============================================
+*.tsbuildinfo
+.turbo/
+
+# =============================================
+# ARCHIVOS DE PRUEBAS Y COBERTURA
+# =============================================
+coverage/
+.nyc_output/
+junit.xml
+test-results/
+.c8_output/
+
+# =============================================
+# ARCHIVOS DE DESPLIEGUE
+# =============================================
+.vercel/
+.netlify/
+.firebase/
+.aws-sam/
+.serverless/
+
+# =============================================
+# ARCHIVOS ESPECIFICOS DEL PROYECTO VIRA
+# =============================================
+# Archivos de datos temporales SQL
+DATOS_*.SQL
+DATOS_*.sql
+DEBUG_*.SQL
+DEBUG_*.sql
+TEST_*.SQL
+TEST_*.sql
+TABLAS_*.SQL
+TABLAS_*.sql
+SOLUCION_*.txt
+
+# Archivos de analisis temporal
+ANALISIS_*.md
+
+# Archivos de logs
+logs/
+*.err
+*.out
+
+# =============================================
+# ARCHIVOS DE MODELOS DE IA/ML (grandes)
+# =============================================
+*.pkl
+*.pickle
+*.joblib
+*.h5
+*.hdf5
+*.pb
+*.ckpt
+*.pth
+*.pt
+*.safetensors
+models/
+checkpoints/
+
+# Archivos especificos de TTS/ML
+wandb/
+mlruns/
+
+# =============================================
+# ARCHIVOS DE CONFIGURACION LOCAL
+# =============================================
+config/local.js
+config/local.json
+config/local.py
+
+# =============================================
+# ARCHIVOS DE BACKUP Y RESTAURACION
+# =============================================
+*.backup
+*.bak
+*.old
+*.orig
+*.rej
+
+# =============================================
+# NOTA IMPORTANTE PARA EL EQUIPO
+# =============================================
+# ESTE ARCHIVO .gitignore ES CRITICO PARA LA SEGURIDAD DEL PROYECTO
+# - NUNCA DESACTIVAR ESTAS REGLAS SIN APROBACION DEL EQUIPO
+# - LOS ARCHIVOS .ENV CONTIENEN CLAVES API Y CREDENCIALES
+# - LOS ARCHIVOS DE AUDIO PUEDEN PESAR VARIOS GB
+#
+# SI NECESITAS AGREGAR ALGO AL REPOSITORIO QUE ESTA EN ESTA LISTA:
+# 1. CONSULTA CON EL EQUIPO PRIMERO
+# 2. USA GIT ADD --FORCE EXPLICITAMENTE
+# 3. DOCUMENTA LA RAZON EN EL COMMIT
