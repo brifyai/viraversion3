@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase-auth'
 import { supabaseAdmin } from '@/lib/supabase-server'
-import { parseRSSFeed, RSSItem } from '@/lib/rss-parser'
 
 // Constantes de ScrapingBee
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY
@@ -236,43 +235,14 @@ async function scrapeFullArticle(noticia: NoticiaParaScrape, region: string): Pr
     console.log(`📄 Scrapeando contenido completo: ${noticia.titulo.substring(0, 50)}...`)
     console.log(`   🌍 Región asignada: ${region}`)
 
-    // Cargar configuración de la fuente desde DB
+    // Cargar configuración de la fuente desde DB (selectores CSS personalizados)
     const fuenteConfig = await getFuenteConfig(noticia.url)
 
-    // === OPCIÓN 1: Usar RSS si está disponible ===
-    if (fuenteConfig?.rss_url && (fuenteConfig.tipo_scraping === 'rss' || fuenteConfig.tipo_scraping === 'ambos')) {
-        console.log(`📡 Intentando RSS para ${fuenteConfig.nombre_fuente}...`)
-        try {
-            const rssFeed = await parseRSSFeed(fuenteConfig.rss_url, fuenteConfig.nombre_fuente)
-
-            // Buscar la noticia específica por URL o título similar
-            const rssItem = rssFeed.items.find(item =>
-                item.url === noticia.url ||
-                item.titulo.toLowerCase().includes(noticia.titulo.substring(0, 30).toLowerCase())
-            )
-
-            if (rssItem && rssItem.contenido.length > 100) {
-                console.log(`✅ RSS exitoso: ${rssItem.contenido.length} chars`)
-                return {
-                    id: `rss-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                    titulo: rssItem.titulo || noticia.titulo,
-                    contenido: rssItem.contenido,
-                    resumen: rssItem.resumen,
-                    url: rssItem.url || noticia.url,
-                    categoria: noticia.categoria,
-                    fuente: noticia.fuente,
-                    region,
-                    imagen_url: rssItem.imagen_url
-                }
-            } else {
-                console.log(`⚠️ RSS no encontró contenido suficiente, intentando web scraping...`)
-            }
-        } catch (error) {
-            console.error(`❌ Error en RSS: ${error}`)
-        }
+    if (fuenteConfig) {
+        console.log(`📋 Config: ${fuenteConfig.nombre_fuente} | premium=${fuenteConfig.usa_premium_proxy}`)
     }
 
-    // === OPCIÓN 2: Usar ScrapingBee ===
+    // Verificar API Key
     if (!SCRAPINGBEE_API_KEY) {
         console.error('❌ SCRAPINGBEE_API_KEY no configurada')
         return null

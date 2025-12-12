@@ -212,18 +212,15 @@ async function getUserSources(resourceOwnerId: string): Promise<{ id: string, ur
                     region: s.fuente.region
                 }))
         }
-    } catch (subError) {
-        console.log('Tabla user_fuentes_suscripciones no disponible')
+
+        // Sin suscripciones = sin fuentes (el usuario debe agregar desde /activos)
+        console.log(`⚠️ Usuario ${resourceOwnerId} no tiene fuentes suscritas`)
+        return []
+
+    } catch (error) {
+        console.error('Error obteniendo fuentes del usuario:', error)
+        return []
     }
-
-    // Fallback: usar fuentes_final directamente
-    const { data: fuentesData } = await supabaseAdmin
-        .from('fuentes_final')
-        .select('id, url, nombre_fuente, region')
-        .eq('esta_activo', true)
-        .limit(20)
-
-    return fuentesData || []
 }
 
 export async function GET(request: NextRequest) {

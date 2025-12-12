@@ -101,6 +101,12 @@ const allNavigationItems = [
     icon: Settings,
     roles: ['super_admin'],  // Solo SUPER_ADMIN
   },
+  {
+    name: 'Gestión Fuentes',
+    href: '/super-admin/fuentes',
+    icon: Settings,
+    roles: ['super_admin'],  // Solo SUPER_ADMIN - Configurar selectores CSS y RSS
+  },
 ]
 
 export function Navigation() {
