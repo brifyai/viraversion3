@@ -3,6 +3,13 @@ import { createServerClient } from '@supabase/ssr'
 
 export async function middleware(request: NextRequest) {
     let supabaseResponse = NextResponse.next({ request })
+    const path = request.nextUrl.pathname
+
+    // ✅ FIX: Excluir rutas /api/* del refresh de token para evitar race conditions
+    // Las API routes manejan su propia autenticación internamente
+    if (path.startsWith('/api/')) {
+        return supabaseResponse
+    }
 
     const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -25,10 +32,8 @@ export async function middleware(request: NextRequest) {
         }
     )
 
-    // Obtener usuario actual
+    // Obtener usuario actual (solo para rutas de páginas, no API)
     const { data: { user } } = await supabase.auth.getUser()
-
-    const path = request.nextUrl.pathname
 
     // Rutas protegidas que requieren autenticación
     const protectedRoutes = [

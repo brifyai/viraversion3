@@ -85,18 +85,44 @@ function categorizarNoticia(titulo: string, bajada: string = ''): string {
 }
 
 // Scrapea la página principal de una fuente con ScrapingBee
-async function scanSourceHomepage(source: { id: string, url: string, nombre_fuente: string }): Promise<NewsPreview[]> {
+// ✅ OPTIMIZADO: Verifica cache antes de scrapear para ahorrar créditos
+async function scanSourceHomepage(source: { id: string, url: string, nombre_fuente: string }): Promise<{ noticias: NewsPreview[], fromCache: boolean }> {
     if (!SCRAPINGBEE_API_KEY) {
         console.error('❌ SCRAPINGBEE_API_KEY no configurada')
-        return []
+        return { noticias: [], fromCache: false }
     }
 
     try {
-        console.log(`🔍 Escaneando: ${source.nombre_fuente} - ${source.url}`)
+        // ✅ PASO 1: Verificar si hay cache válido
+        const { data: cached } = await supabaseAdmin
+            .from('scraping_cache')
+            .select('*')
+            .eq('fuente_url', source.url)
+            .gt('expires_at', new Date().toISOString())
+            .single()
 
-        // ✅ OPTIMIZADO: Solo render_js para páginas principales (5 créditos vs 40)
-        // premium_proxy y country_code solo son necesarios si el sitio bloquea
-        // Antes: 40 créditos | Ahora: 5 créditos por fuente
+        if (cached && cached.noticias && Array.isArray(cached.noticias)) {
+            console.log(`📦 Usando CACHE para ${source.nombre_fuente} (${cached.noticias.length} noticias, expira: ${new Date(cached.expires_at).toLocaleTimeString()})`)
+
+            // Convertir noticias del cache al formato esperado
+            const noticiasFromCache: NewsPreview[] = cached.noticias.map((n: any) => ({
+                id: n.id || `cache-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                titulo: n.titulo,
+                bajada: n.bajada || '',
+                url: n.url,
+                categoria: n.categoria,
+                fuente: source.nombre_fuente,
+                fuente_id: source.id,
+                imagen_url: n.imagen_url,
+                fecha_publicacion: n.fecha_publicacion
+            }))
+
+            return { noticias: noticiasFromCache, fromCache: true }
+        }
+
+        // ✅ PASO 2: No hay cache, scrapear normalmente
+        console.log(`🔍 Escaneando: ${source.nombre_fuente} - ${source.url} (sin cache)`)
+
         const params = new URLSearchParams({
             api_key: SCRAPINGBEE_API_KEY,
             url: source.url,
@@ -107,7 +133,7 @@ async function scanSourceHomepage(source: { id: string, url: string, nombre_fuen
 
         if (!response.ok) {
             console.error(`❌ Error ScrapingBee: ${response.status}`)
-            return []
+            return { noticias: [], fromCache: false }
         }
 
         const html = await response.text()
@@ -116,11 +142,47 @@ async function scanSourceHomepage(source: { id: string, url: string, nombre_fuen
         const noticias = parseNewsFromHTML(html, source)
         console.log(`✅ Encontradas ${noticias.length} noticias en ${source.nombre_fuente}`)
 
-        return noticias
+        // ✅ PASO 3: Guardar en cache para futuros requests
+        if (noticias.length > 0) {
+            const categoriasConteo: { [key: string]: number } = {}
+            noticias.forEach(n => {
+                categoriasConteo[n.categoria] = (categoriasConteo[n.categoria] || 0) + 1
+            })
+
+            const { error: cacheError } = await supabaseAdmin
+                .from('scraping_cache')
+                .upsert({
+                    fuente_id: source.id,
+                    fuente_url: source.url,
+                    noticias: noticias.map(n => ({
+                        id: n.id,
+                        titulo: n.titulo,
+                        bajada: n.bajada,
+                        url: n.url,
+                        categoria: n.categoria,
+                        imagen_url: n.imagen_url,
+                        fecha_publicacion: n.fecha_publicacion
+                    })),
+                    categorias_conteo: categoriasConteo,
+                    total_noticias: noticias.length,
+                    created_at: new Date().toISOString(),
+                    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 horas
+                }, {
+                    onConflict: 'fuente_url'
+                })
+
+            if (cacheError) {
+                console.warn(`⚠️ Error guardando cache: ${cacheError.message}`)
+            } else {
+                console.log(`💾 Cache guardado para ${source.nombre_fuente} (expira en 24h)`)
+            }
+        }
+
+        return { noticias, fromCache: false }
 
     } catch (error) {
         console.error(`❌ Error escaneando ${source.nombre_fuente}:`, error)
-        return []
+        return { noticias: [], fromCache: false }
     }
 }
 
@@ -391,11 +453,20 @@ export async function POST(request: NextRequest) {
         // Escanear cada fuente en paralelo (máx 3 a la vez)
         const allNoticias: NewsPreview[] = []
         const batchSize = 3
+        let cachedSources = 0
+        let freshSources = 0
 
         for (let i = 0; i < fuentes.length; i += batchSize) {
             const batch = fuentes.slice(i, i + batchSize)
             const results = await Promise.all(batch.map(scanSourceHomepage))
-            results.forEach(noticias => allNoticias.push(...noticias))
+            results.forEach(result => {
+                allNoticias.push(...result.noticias)
+                if (result.fromCache) {
+                    cachedSources++
+                } else {
+                    freshSources++
+                }
+            })
         }
 
         // Contar por categoría
@@ -406,13 +477,16 @@ export async function POST(request: NextRequest) {
 
         console.log(`✅ Total: ${allNoticias.length} noticias encontradas`)
         console.log(`📊 Por categoría:`, porCategoria)
+        console.log(`💾 Fuentes de cache: ${cachedSources} | Scrapeadas: ${freshSources}`)
 
         return NextResponse.json({
             success: true,
             noticias: allNoticias,
             por_categoria: porCategoria,
             fuentes_escaneadas: fuentes.length,
-            total_noticias: allNoticias.length
+            total_noticias: allNoticias.length,
+            cached_sources: cachedSources,
+            fresh_sources: freshSources
         })
 
     } catch (error: any) {

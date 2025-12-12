@@ -235,6 +235,30 @@ async function scrapeFullArticle(noticia: NoticiaParaScrape, region: string): Pr
     console.log(`📄 Scrapeando contenido completo: ${noticia.titulo.substring(0, 50)}...`)
     console.log(`   🌍 Región asignada: ${region}`)
 
+    // ✅ OPTIMIZACIÓN: Verificar si ya existe en DB con contenido reciente
+    const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const { data: existing } = await supabaseAdmin
+        .from('noticias_scrapeadas')
+        .select('*')
+        .eq('url', noticia.url)
+        .gt('fecha_scraping', last24h)
+        .single()
+
+    if (existing && existing.contenido && existing.contenido.length > 500) {
+        console.log(`📦 Usando noticia de DB: ${noticia.titulo.substring(0, 40)}... (${existing.contenido.length} chars)`)
+        return {
+            id: existing.id,
+            titulo: existing.titulo,
+            contenido: existing.contenido,
+            resumen: existing.resumen || '',
+            url: existing.url,
+            categoria: existing.categoria || noticia.categoria,
+            fuente: existing.fuente || noticia.fuente,
+            region: existing.region || region,
+            imagen_url: existing.imagen_url
+        }
+    }
+
     // Cargar configuración de la fuente desde DB (selectores CSS personalizados)
     const fuenteConfig = await getFuenteConfig(noticia.url)
 
@@ -251,12 +275,12 @@ async function scrapeFullArticle(noticia: NoticiaParaScrape, region: string): Pr
     // Función interna para hacer el request a ScrapingBee
     async function fetchWithScrapingBee(usePremium: boolean): Promise<string | null> {
         const shouldUsePremium = usePremium || fuenteConfig?.usa_premium_proxy
+        // ✅ OPTIMIZADO: Removido country_code para ahorrar 25 créditos por request
         const params = new URLSearchParams({
             api_key: SCRAPINGBEE_API_KEY,
             url: noticia.url,
             render_js: 'true',
             premium_proxy: shouldUsePremium ? 'true' : 'false',
-            country_code: 'cl',
             wait: shouldUsePremium ? '3000' : '2000'
         })
 

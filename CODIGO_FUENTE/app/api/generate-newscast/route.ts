@@ -382,10 +382,15 @@ export async function POST(request: NextRequest) {
     // 📏 CÁLCULO DINÁMICO DE PALABRAS POR NOTICIA
     // Basado en la duración objetivo y cantidad de noticias seleccionadas
     const introOutroDuration = 30 // 15s intro + 15s outro
-    const adsDuration = (adCount || 0) * 30 // ~30s por anuncio
+    const adsDuration = (adCount || 0) * 25 // ~25s por anuncio (ajustado)
     const availableNewsTime = targetDuration - introOutroDuration - adsDuration
     const timePerNews = availableNewsTime / Math.max(1, selectedNews.length)
-    const targetWordsPerNews = Math.max(60, Math.min(300, Math.round((timePerNews / 60) * effectiveWPM)))
+
+    // ✅ MEJORADO: Permitir más palabras cuando hay pocas noticias
+    // Con pocas noticias, cada una puede ser más extensa para llenar el tiempo
+    const maxWordsAllowed = selectedNews.length <= 5 ? 600 :
+      selectedNews.length <= 10 ? 400 : 300
+    const targetWordsPerNews = Math.max(80, Math.min(maxWordsAllowed, Math.round((timePerNews / 60) * effectiveWPM)))
 
     console.log(`📏 === CONTROL DE DURACIÓN ===`)
     console.log(`   🎯 Duración objetivo: ${targetDuration}s (${Math.round(targetDuration / 60)} min)`)

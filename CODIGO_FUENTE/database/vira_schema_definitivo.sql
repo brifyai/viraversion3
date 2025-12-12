@@ -613,5 +613,28 @@ INSERT INTO "fuentes_final" ("region", "nombre_fuente", "url", "rss_url", "tipo_
 ON CONFLICT (url) DO NOTHING;
 
 -- ==================================================
+-- TABLA: scraping_cache
+-- Cache de escaneos de páginas principales (preview)
+-- Para ahorrar créditos de ScrapingBee
+-- ==================================================
+CREATE TABLE IF NOT EXISTS "scraping_cache" (
+    "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    "fuente_id" UUID REFERENCES "fuentes_final"("id") ON DELETE CASCADE,
+    "fuente_url" TEXT NOT NULL UNIQUE,
+    "noticias" JSONB NOT NULL DEFAULT '[]',  -- [{titulo, url, categoria, fecha_publicacion}]
+    "categorias_conteo" JSONB DEFAULT '{}',   -- {"Política": 5, "Deportes": 3}
+    "total_noticias" INTEGER DEFAULT 0,
+    "created_at" TIMESTAMPTZ DEFAULT NOW(),
+    "expires_at" TIMESTAMPTZ DEFAULT NOW() + INTERVAL '24 hours'
+);
+
+CREATE INDEX IF NOT EXISTS idx_scraping_cache_url ON "scraping_cache"("fuente_url");
+CREATE INDEX IF NOT EXISTS idx_scraping_cache_expires ON "scraping_cache"("expires_at");
+
+COMMENT ON TABLE "scraping_cache" IS 'Cache de escaneos de páginas principales para ahorrar créditos ScrapingBee';
+COMMENT ON COLUMN "scraping_cache"."noticias" IS 'Array JSON con noticias encontradas: [{titulo, url, categoria, fecha_publicacion}]';
+COMMENT ON COLUMN "scraping_cache"."expires_at" IS 'Fecha de expiración del cache (24 horas por defecto)';
+
+-- ==================================================
 -- FIN DEL SCHEMA
 -- ==================================================
