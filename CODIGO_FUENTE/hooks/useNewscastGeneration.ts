@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation'
 interface NewscastConfig {
     region: string
     categories: string[]
+    categoryConfig?: any // Configuración detallada de conteos por categoría
+    specificNewsUrls?: string[] // URLs específicas seleccionadas
     targetDuration: number
     generateAudioNow: boolean
     frecuencia_anuncios?: number
@@ -67,6 +69,8 @@ export function useNewscastGeneration() {
                 body: JSON.stringify({
                     region: config.region,
                     categories: config.categories,
+                    categoryConfig: config.categoryConfig,
+                    specificNewsUrls: config.specificNewsUrls,
                     targetDuration: config.targetDuration,
                     generateAudioNow: config.generateAudioNow,
                     frecuencia_anuncios: config.frecuencia_anuncios || 2,

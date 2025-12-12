@@ -119,19 +119,30 @@ COMMENT ON TABLE "programados" IS 'Tareas programadas y automatización de notic
 
 -- ==================================================
 -- TABLA: fuentes_final
--- ✅ Catálogo global de fuentes (URL única)
+-- ✅ Catálogo global de fuentes con configuración de scraping
 -- ==================================================
 CREATE TABLE IF NOT EXISTS "fuentes_final" (
     "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     "region" TEXT NOT NULL REFERENCES "configuraciones_regiones"("region") ON UPDATE CASCADE,
     "nombre_fuente" TEXT NOT NULL,
     "url" TEXT NOT NULL UNIQUE,  -- ✅ UNIQUE: No duplicar fuentes
-    "rss_url" TEXT,
+    "rss_url" TEXT,  -- URL del feed RSS (si existe)
+    "tipo_scraping" TEXT DEFAULT 'web' CHECK (tipo_scraping IN ('rss', 'web', 'ambos')),
+    "selectores_css" JSONB DEFAULT '{
+        "contenido": [],
+        "titulo": [],
+        "resumen": [],
+        "imagen": [],
+        "eliminar": []
+    }',
+    "usa_premium_proxy" BOOLEAN DEFAULT false,
+    "estado_test" TEXT DEFAULT 'pendiente' CHECK (estado_test IN ('pendiente', 'exitoso', 'fallido')),
+    "ultimo_test" TIMESTAMPTZ,
     "esta_activo" BOOLEAN DEFAULT true,
     "created_at" TIMESTAMPTZ DEFAULT NOW()
 );
 
-COMMENT ON TABLE "fuentes_final" IS 'Catálogo global de fuentes de noticias (compartidas)';
+COMMENT ON TABLE "fuentes_final" IS 'Catálogo global de fuentes de noticias con configuración de scraping (RSS/Web/selectores CSS)';
 
 -- ==================================================
 -- TABLA: user_fuentes_suscripciones
@@ -548,6 +559,58 @@ INSERT INTO "users" ("email", "password_hash", "nombre_completo", "role", "is_ac
 ('admin@vira.cl', '$2b$10$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'Administrador VIRA', 'admin', true)
 -- Password hash de ejemplo: "admin123" (⚠️ CAMBIAR EN PRODUCCIÓN)
 ON CONFLICT (email) DO NOTHING;
+
+-- ==================================================
+-- CATÁLOGO INICIAL DE FUENTES CHILENAS
+-- ==================================================
+
+-- Fuentes Nacionales
+INSERT INTO "fuentes_final" ("region", "nombre_fuente", "url", "rss_url", "tipo_scraping", "selectores_css", "estado_test") VALUES
+('Nacional', 'Emol', 'https://www.emol.com', NULL, 'web', '{
+    "contenido": ["#cuDetalle_cuTexto_uc498", ".EmolText", "#texto_noticia"],
+    "titulo": ["h1.titulo"],
+    "imagen": ["meta[property=''og:image'']"],
+    "eliminar": [".ads", "nav", "footer", ".sidebar", ".relacionadas"]
+}', 'exitoso'),
+('Nacional', 'BioBioChile', 'https://www.biobiochile.cl', 'https://www.biobiochile.cl/rss/category/noticias/nacional.xml', 'ambos', '{
+    "contenido": [".article-content", ".nota-content", ".entry-content"],
+    "eliminar": [".ads", ".sidebar", "nav", "footer"]
+}', 'pendiente'),
+('Nacional', 'Cooperativa', 'https://www.cooperativa.cl', 'https://www.cooperativa.cl/noticias/rss/site.xml', 'rss', '{}', 'pendiente'),
+('Nacional', 'La Tercera', 'https://www.latercera.com', NULL, 'web', '{
+    "contenido": [".single-content", ".article-body-content"],
+    "eliminar": [".ads", "nav", "footer"]
+}', 'pendiente'),
+('Nacional', '24 Horas', 'https://www.24horas.cl', NULL, 'web', '{
+    "contenido": [".article-body", ".nota-content"],
+    "eliminar": [".ads", "nav", "footer"]
+}', 'pendiente'),
+('Nacional', 'CHV Noticias', 'https://www.chvnoticias.cl', NULL, 'web', '{
+    "contenido": [".article-body", ".entry-content"],
+    "eliminar": [".ads", "nav", "footer"]
+}', 'pendiente')
+ON CONFLICT (url) DO NOTHING;
+
+-- Fuentes Regionales - Ñuble
+INSERT INTO "fuentes_final" ("region", "nombre_fuente", "url", "rss_url", "tipo_scraping", "selectores_css", "estado_test") VALUES
+('Ñuble', 'La Discusión', 'https://ladiscusion.cl', 'https://ladiscusion.cl/feed/', 'rss', '{}', 'exitoso'),
+('Ñuble', 'SoyChillan', 'https://www.soychile.cl/chillan', NULL, 'web', '{
+    "contenido": [".article-body", ".nota-cuerpo", ".content-article"],
+    "eliminar": [".ads", "nav", "footer", ".menu"]
+}', 'fallido')
+ON CONFLICT (url) DO NOTHING;
+
+-- Fuentes Regionales - Biobío
+INSERT INTO "fuentes_final" ("region", "nombre_fuente", "url", "rss_url", "tipo_scraping", "selectores_css", "estado_test") VALUES
+('Biobío', 'El Sur', 'https://www.elsur.cl', NULL, 'web', '{
+    "contenido": [".article-body", ".entry-content"],
+    "eliminar": [".ads", "nav", "footer"]
+}', 'pendiente'),
+('Biobío', 'Radio BioBío Concepción', 'https://www.radiobiobio.cl', NULL, 'web', '{
+    "contenido": [".article-body", ".nota-content"],
+    "eliminar": [".ads", "nav", "footer"]
+}', 'pendiente')
+ON CONFLICT (url) DO NOTHING;
 
 -- ==================================================
 -- FIN DEL SCHEMA

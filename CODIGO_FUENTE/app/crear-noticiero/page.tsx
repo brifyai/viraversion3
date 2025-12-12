@@ -13,9 +13,10 @@ import { DurationSlider } from '@/components/newscast/DurationSlider'
 import { GenerateButton } from '@/components/newscast/GenerateButton'
 import { VoiceSelector } from '@/components/newscast/VoiceSelector'
 import { useNewscastGeneration } from '@/hooks/useNewscastGeneration'
-import { Save, Settings, Music, Clock } from 'lucide-react'
+import { Save, Settings, Music, Clock, Search, Loader2, Newspaper, CheckCircle } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
+import { NewsSelectionModal } from '@/components/NewsSelectionModal'
 
 // Interfaces
 interface RadioStation {
@@ -36,15 +37,28 @@ interface CategoryWithCount {
 }
 
 const initialCategories: CategoryWithCount[] = [
-  { id: 'regionales', label: 'Regionales', checked: true, count: 0, selectedCount: 3 },
+  { id: 'regionales', label: 'Regionales', checked: false, count: 0, selectedCount: 0 },
   { id: 'nacionales', label: 'Nacionales', checked: true, count: 0, selectedCount: 3 },
   { id: 'deportes', label: 'Deportes', checked: false, count: 0, selectedCount: 0 },
-  { id: 'economia', label: 'Economía', checked: false, count: 0, selectedCount: 0 },
+  { id: 'economia', label: 'Economía', checked: true, count: 0, selectedCount: 2 },
   { id: 'mundo', label: 'Mundo', checked: false, count: 0, selectedCount: 0 },
   { id: 'tendencias', label: 'Tendencias', checked: false, count: 0, selectedCount: 0 },
-  { id: 'politica', label: 'Política', checked: false, count: 0, selectedCount: 0 },
+  { id: 'politica', label: 'Política', checked: true, count: 0, selectedCount: 2 },
   { id: 'tecnologia', label: 'Tecnología', checked: false, count: 0, selectedCount: 0 },
 ]
+
+// Interfaz para noticias escaneadas
+interface NewsPreview {
+  id: string
+  titulo: string
+  bajada: string
+  url: string
+  categoria: string
+  fuente: string
+  fuente_id: string
+  imagen_url?: string
+  selected?: boolean
+}
 
 export default function CrearNoticiero() {
   // Estados principales
@@ -67,6 +81,48 @@ export default function CrearNoticiero() {
   const [radioStations, setRadioStations] = useState<RadioStation[]>([])
   const [loadingRadios, setLoadingRadios] = useState(true)
   const [radiosError, setRadiosError] = useState<string | null>(null)
+
+  // Estados para escaneo de fuentes
+  const [isScanning, setIsScanning] = useState(false)
+  const [scannedNews, setScannedNews] = useState<NewsPreview[]>([])
+  const [hasScanned, setHasScanned] = useState(false)
+  const [scanError, setScanError] = useState<string | null>(null)
+
+  // News Selection Modal State
+  const [modalOpen, setModalOpen] = useState(false)
+  const [activeCategory, setActiveCategory] = useState<string>('')
+  const [selectedNewsUrls, setSelectedNewsUrls] = useState<string[]>([])
+
+  // Estado de pre-procesamiento
+  const [isPreProcessing, setIsPreProcessing] = useState(false)
+
+  // Selección de fuentes
+  const [availableSources, setAvailableSources] = useState<{ id: string, nombre_fuente: string, url: string }[]>([])
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
+  const [loadingSources, setLoadingSources] = useState(false)
+
+  // Cargar fuentes disponibles al inicio
+  useEffect(() => {
+    async function loadSources() {
+      setLoadingSources(true)
+      try {
+        const response = await fetch('/api/scraping/preview')
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.fuentes) {
+            setAvailableSources(data.fuentes)
+            // Por defecto seleccionar todas
+            setSelectedSourceIds(data.fuentes.map((f: any) => f.id))
+          }
+        }
+      } catch (error) {
+        console.error('Error loading sources:', error)
+      } finally {
+        setLoadingSources(false)
+      }
+    }
+    loadSources()
+  }, [])
 
   // Hook de generación
   const {
@@ -159,20 +215,189 @@ export default function CrearNoticiero() {
     loadNewsStats()
   }, [selectedRegion])
 
-  // Manejar cambio de categoría (ahora con selectedCount)
-  const handleCategoryChange = (categoryId: string, checked: boolean, selectedCount?: number) => {
-    setCategories(prev =>
-      prev.map(cat => {
-        if (cat.id === categoryId) {
-          return {
-            ...cat,
-            checked,
-            selectedCount: selectedCount !== undefined ? selectedCount : (checked ? Math.min(3, cat.count || 3) : 0)
+  // Función para escanear fuentes suscritas
+  const handleScanSources = async () => {
+    setIsScanning(true)
+    setScanError(null)
+
+    try {
+      console.log('🔍 Iniciando escaneo de fuentes...')
+
+      const response = await fetch('/api/scraping/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ sourceIds: selectedSourceIds })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Error al escanear fuentes')
+      }
+
+      console.log(`✅ Escaneo completado: ${data.total_noticias} noticias encontradas`)
+      console.log('📊 Por categoría:', data.por_categoria)
+
+      // Guardar noticias escaneadas
+      setScannedNews(data.noticias || [])
+      setHasScanned(true)
+
+      // Actualizar conteos de categorías con los datos reales del escaneo
+      // Calcular nuevas categorías y pre-seleccionar noticias
+      const newCategories = categories.map(cat => {
+        const categoryName = cat.label
+        const count = data.por_categoria[categoryName] || 0
+        return {
+          ...cat,
+          count,
+          selectedCount: cat.checked ? Math.min(cat.selectedCount || 3, count) : 0
+        }
+      })
+
+      setCategories(newCategories)
+
+      // Sincronizar URLs seleccionadas
+      const newSelectedUrls: string[] = []
+      newCategories.forEach(cat => {
+        if (cat.selectedCount && cat.selectedCount > 0) {
+          const catNews = (data.noticias || []).filter((n: any) => n.categoria === cat.label)
+          if (catNews.length > 0) {
+            newSelectedUrls.push(...catNews.slice(0, cat.selectedCount).map((n: any) => n.url))
           }
         }
-        return cat
       })
-    )
+      setSelectedNewsUrls(newSelectedUrls)
+
+      toast.success(`✅ ${data.total_noticias} noticias encontradas de ${data.fuentes_escaneadas} fuentes`)
+
+    } catch (error: any) {
+      console.error('Error escaneando fuentes:', error)
+      setScanError(error.message || 'Error al escanear fuentes')
+      toast.error(error.message || 'Error al escanear fuentes')
+    } finally {
+      setIsScanning(false)
+    }
+  }
+
+  // --- Handlers para Modal de Selección y Sincronización ---
+
+  const handleOpenModal = (categoryId: string) => {
+    const cat = categories.find(c => c.id === categoryId)
+    if (cat) {
+      setActiveCategory(cat.label)
+      setModalOpen(true)
+    }
+  }
+
+  const handleToggleNews = (url: string) => {
+    setSelectedNewsUrls(prev => {
+      const isSelected = prev.includes(url)
+      // Toggle logic
+      const newSelection = isSelected
+        ? prev.filter(u => u !== url)
+        : [...prev, url]
+
+      // Sincronizar con el contador de categorías inmediatamente
+      const newsItem = scannedNews.find(n => n.url === url)
+      if (newsItem) {
+        setCategories(cats => cats.map(c => {
+          if (c.label === newsItem.categoria) {
+            // Contar cuántas de ESTA categoría hay en la nueva selección
+            const countForThisCat = newSelection.filter(u => {
+              const n = scannedNews.find(sn => sn.url === u)
+              return n && n.categoria === c.label
+            }).length
+            return { ...c, selectedCount: countForThisCat }
+          }
+          return c
+        }))
+      }
+
+      return newSelection
+    })
+  }
+
+  const handleSelectAll = (urls: string[]) => {
+    const newSelection = Array.from(new Set([...selectedNewsUrls, ...urls]))
+    setSelectedNewsUrls(newSelection)
+
+    // Update category count
+    if (urls.length > 0) {
+      const sampleUrl = urls[0]
+      const newsItem = scannedNews.find(n => n.url === sampleUrl)
+      if (newsItem) {
+        setCategories(cats => cats.map(c => {
+          if (c.label === newsItem.categoria) {
+            return { ...c, selectedCount: urls.length }
+          }
+          return c
+        }))
+      }
+    }
+  }
+
+  const handleDeselectAll = (urls: string[]) => {
+    const newSelection = selectedNewsUrls.filter(u => !urls.includes(u))
+    setSelectedNewsUrls(newSelection)
+
+    if (urls.length > 0) {
+      const sampleUrl = urls[0]
+      const newsItem = scannedNews.find(n => n.url === sampleUrl)
+      if (newsItem) {
+        setCategories(cats => cats.map(c => {
+          if (c.label === newsItem.categoria) {
+            return { ...c, selectedCount: 0 }
+          }
+          return c
+        }))
+      }
+    }
+  }
+
+  // Manejar cambio de categoría desde el selector (+/-)
+  const handleCategoryChange = (categoryId: string, checked: boolean, requestedCount?: number) => {
+    // 1. Actualizar estado de checked/count en categories
+    const targetCat = categories.find(c => c.id === categoryId)
+    if (!targetCat) return
+
+    let newCount = requestedCount !== undefined ? requestedCount : (targetCat.selectedCount || 0)
+    if (!checked) newCount = 0
+
+    setCategories(prev => prev.map(c => {
+      if (c.id === categoryId) {
+        return { ...c, checked, selectedCount: newCount }
+      }
+      return c
+    }))
+
+    // 2. Sincronizar URLs seleccionadas (Smart Add/Remove)
+    // Obtener URLs actuales de esta categoría
+    const currentCatUrls = selectedNewsUrls.filter(u => {
+      const n = scannedNews.find(sn => sn.url === u)
+      return n && n.categoria === targetCat.label
+    })
+
+    const currentCount = currentCatUrls.length
+
+    if (newCount > currentCount) {
+      // Debemos AGREGAR noticias (las primeras disponibles no seleccionadas)
+      const toAddCount = newCount - currentCount
+      const availableNews = scannedNews.filter(n =>
+        n.categoria === targetCat.label && !selectedNewsUrls.includes(n.url)
+      )
+      const toAdd = availableNews.slice(0, toAddCount).map(n => n.url)
+
+      setSelectedNewsUrls(prev => [...prev, ...toAdd])
+
+    } else if (newCount < currentCount) {
+      // Debemos QUITAR noticias (las últimas agregadas)
+      const toRemoveCount = currentCount - newCount
+      // Asumimos que currentCatUrls está ordenado? No necesariamente.
+      // Quitamos cualquiera, idealmente las últimas.
+      const toRemove = currentCatUrls.slice(-toRemoveCount)
+      setSelectedNewsUrls(prev => prev.filter(u => !toRemove.includes(u)))
+    }
   }
 
   // Calcular duración estimada del noticiero
@@ -202,11 +427,61 @@ export default function CrearNoticiero() {
       return
     }
 
+    // Crear configuración detallada de categorías
+    const categoryConfig = categories
+      .filter(c => c.checked)
+      .reduce((acc: any, c) => {
+        acc[c.label] = c.selectedCount || 3
+        return acc
+      }, {})
+
+    // AUTOMATED DEEP SCRAPING
+    // Si hay URLs seleccionadas, asegurarnos de que tengan contenido completo antes de generar
+    if (selectedNewsUrls.length > 0) {
+      setIsPreProcessing(true)
+      try {
+        toast.info('📥 Obteniendo contenido completo de las noticias seleccionadas...', { autoClose: 3000 })
+
+        const newsToScrape = selectedNewsUrls.map(url => {
+          const item = scannedNews.find(n => n.url === url)
+          return item ? {
+            url: item.url,
+            titulo: item.titulo,
+            categoria: item.categoria,
+            fuente: item.fuente
+          } : null
+        }).filter(n => n !== null)
+
+        if (newsToScrape.length > 0) {
+          const scrapeRes = await fetch('/api/scraping/deep', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              noticias: newsToScrape,
+              region: selectedRegion || 'Nacional'
+            })
+          })
+
+          if (!scrapeRes.ok) {
+            console.warn('Advertencia en scraping automático')
+          } else {
+            console.log('✅ Scraping automático completado')
+          }
+        }
+      } catch (e) {
+        console.error('Error en scraping automático:', e)
+      } finally {
+        setIsPreProcessing(false)
+      }
+    }
+
     // Generar noticiero
     const result = await generateNewscast({
       region: selectedRegion,
       categories: selectedCategoryIds,
-      targetDuration: duration * 60, // convertir a segundos
+      categoryConfig,
+      specificNewsUrls: selectedNewsUrls, // Enviar URLs específicas
+      targetDuration: duration * 60,
       generateAudioNow: generateAudio,
       adCount: adCount,
       includeTimeWeather: includeWeather,
@@ -216,18 +491,17 @@ export default function CrearNoticiero() {
         minute: '2-digit'
       }),
       voiceModel: selectedVoice,
-      voiceWPM: voiceWPM, // WPM de la voz para cálculo preciso de duración
-      // Configuración de audio
+      voiceWPM: voiceWPM,
       audioConfig: {
         cortinas_enabled: cortinasEnabled,
         cortinas_frequency: cortinasFrequency,
         cortina_default_id: null,
-        cortina_default_url: null, // Se configurará en plantilla
+        cortina_default_url: null,
         background_music_enabled: false,
         background_music_id: null,
         background_music_volume: 0.2
       }
-    })
+    } as any)
 
     // Si fue exitoso, navegar al timeline
     if (result.success && result.newscastId) {
@@ -323,14 +597,134 @@ export default function CrearNoticiero() {
               </CardContent>
             </Card>
 
-            {/* 2. Categorías */}
+            {/* 2. Escanear Fuentes */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  <span>2. Categorías de Noticias</span>
-                  {loadingStats && (
+                  <span className="flex items-center gap-2">
+                    <Search className="h-5 w-5" />
+                    2. Escanear Fuentes
+                  </span>
+                  {hasScanned && (
+                    <span className="flex items-center gap-1 text-sm font-normal text-green-600">
+                      <CheckCircle className="h-4 w-4" />
+                      {scannedNews.length} noticias encontradas
+                    </span>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-gray-600 mb-4">
+                  Escanea las páginas principales de tus fuentes suscritas para ver qué noticias están disponibles.
+                </p>
+
+                <div className="mb-6">
+                  <label className="text-sm font-medium mb-2 block">Selecciona las fuentes que deseas escanear:</label>
+                  {loadingSources ? (
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Cargando fuentes...
+                    </div>
+                  ) : availableSources.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      <div
+                        onClick={() => {
+                          if (selectedSourceIds.length === availableSources.length) {
+                            setSelectedSourceIds([])
+                          } else {
+                            setSelectedSourceIds(availableSources.map(s => s.id))
+                          }
+                        }}
+                        className={`
+                            cursor-pointer px-3 py-1 rounded-full text-xs font-bold border transition-colors
+                            ${selectedSourceIds.length === availableSources.length
+                            ? 'bg-gray-800 border-gray-800 text-white'
+                            : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}
+                          `}
+                      >
+                        {selectedSourceIds.length === availableSources.length ? 'Todas' : 'Seleccionar Todo'}
+                      </div>
+                      {availableSources.map(source => (
+                        <div
+                          key={source.id}
+                          onClick={() => {
+                            setSelectedSourceIds(prev =>
+                              prev.includes(source.id)
+                                ? prev.filter(id => id !== source.id)
+                                : [...prev, source.id]
+                            )
+                          }}
+                          className={`
+                            cursor-pointer px-3 py-1 rounded-full text-xs font-medium border transition-colors flex items-center gap-1
+                            ${selectedSourceIds.includes(source.id)
+                              ? 'bg-blue-100 border-blue-400 text-blue-700'
+                              : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}
+                          `}
+                        >
+                          {source.nombre_fuente}
+                          {selectedSourceIds.includes(source.id) && (
+                            <span className="text-blue-500 text-[10px]">✓</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 italic">No se encontraron fuentes asociadas a tu cuenta.</p>
+                  )}
+                  {selectedSourceIds.length === 0 && availableSources.length > 0 && (
+                    <p className="text-xs text-red-500 mt-2">⚠️ Debes seleccionar al menos una fuente</p>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    onClick={handleScanSources}
+                    disabled={isScanning || selectedSourceIds.length === 0}
+                    className="flex items-center gap-2"
+                    variant={hasScanned ? "outline" : "default"}
+                  >
+                    {isScanning ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Escaneando...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="h-4 w-4" />
+                        {hasScanned ? 'Escanear de Nuevo' : 'Escanear Mis Fuentes'}
+                      </>
+                    )}
+                  </Button>
+
+                  {hasScanned && totalNewsSelected > 0 && (
+                    <div className="flex items-center gap-2 text-sm text-green-600 font-medium px-3 py-2 bg-green-50 rounded-md border border-green-200">
+                      <CheckCircle className="h-4 w-4" />
+                      {totalNewsSelected} noticias seleccionadas
+                    </div>
+                  )}
+                </div>
+
+                {scanError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                    ⚠️ {scanError}
+                  </div>
+                )}
+
+                {!hasScanned && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">
+                    💡 Primero escanea tus fuentes para ver las noticias disponibles.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* 3. Categorías */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span>3. Selección de Noticias por Categoría</span>
+                  {(loadingStats || isScanning) && (
                     <span className="text-sm font-normal text-blue-600 animate-pulse">
-                      Cargando...
+                      {isScanning ? 'Escaneando...' : 'Cargando...'}
                     </span>
                   )}
                 </CardTitle>
@@ -339,16 +733,26 @@ export default function CrearNoticiero() {
                 <CategorySelector
                   categories={categories}
                   onCategoryChange={handleCategoryChange}
+                  onOpenNewsModal={handleOpenModal}
                   showCounts={true}
                   maxPerCategory={10}
                 />
+
+                {hasScanned && totalNewsSelected > 0 && (
+                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+                    <p>
+                      ✨ <strong>{totalNewsSelected}</strong> noticias seleccionadas.
+                      Al generar el noticiero, el sistema descargará el contenido automáticamente.
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
-            {/* 3. Duración y Estimación */}
+            {/* 4. Duración y Estimación */}
             <Card>
               <CardHeader>
-                <CardTitle>3. Duración del Noticiero</CardTitle>
+                <CardTitle>4. Duración del Noticiero</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <DurationSlider
@@ -377,10 +781,10 @@ export default function CrearNoticiero() {
               </CardContent>
             </Card>
 
-            {/* 4. Configuración de Publicidad */}
+            {/* 5. Configuración de Publicidad */}
             <Card>
               <CardHeader>
-                <CardTitle>4. Configuración de Publicidad</CardTitle>
+                <CardTitle>5. Configuración de Publicidad</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -574,12 +978,12 @@ export default function CrearNoticiero() {
 
             {/* Botón de Generar */}
             <GenerateButton
-              isGenerating={isGenerating}
+              isGenerating={isGenerating || isPreProcessing}
               progress={progress}
-              status={status}
+              status={isPreProcessing ? 'Obteniendo contenido...' : status} // Mostrar status de pre-procesamiento
               error={error}
               onGenerate={handleGenerate}
-              disabled={!selectedRegion || !selectedRadio}
+              disabled={!selectedRegion || !selectedRadio || isPreProcessing}
             />
 
             {/* Botón de Guardar Plantilla */}
@@ -595,6 +999,19 @@ export default function CrearNoticiero() {
           </div>
         </div>
       </div>
-    </div >
+
+      {/* Modal de Selección manual de noticias */}
+      <NewsSelectionModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        category={activeCategory}
+        news={scannedNews.filter(n => n.categoria === activeCategory)}
+        selectedUrls={selectedNewsUrls}
+        onToggleNews={handleToggleNews}
+        onSelectAll={handleSelectAll}
+        onDeselectAll={handleDeselectAll}
+      />
+
+    </div>
   )
 }

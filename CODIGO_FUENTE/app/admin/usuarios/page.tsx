@@ -1,0 +1,305 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog'
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select'
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table'
+import { Checkbox } from '@/components/ui/checkbox'
+import { toast } from 'react-toastify'
+import { UserPlus, Users, Shield, Crown, User, Loader2, RefreshCw } from 'lucide-react'
+
+interface UserData {
+    id: string
+    nombre_completo: string
+    email: string
+    role: string
+    company: string
+    is_active: boolean
+    created_at: string
+    last_login: string | null
+}
+
+export default function UsuariosPage() {
+    const [users, setUsers] = useState<UserData[]>([])
+    const [loading, setLoading] = useState(true)
+    const [creating, setCreating] = useState(false)
+    const [dialogOpen, setDialogOpen] = useState(false)
+
+    // Form state
+    const [newName, setNewName] = useState('')
+    const [newEmail, setNewEmail] = useState('')
+    const [newRole, setNewRole] = useState('user')
+    const [sendInvite, setSendInvite] = useState(true)
+
+    const fetchUsers = async () => {
+        setLoading(true)
+        try {
+            const response = await fetch('/api/users')
+            const data = await response.json()
+
+            if (response.ok) {
+                setUsers(data.users || [])
+            } else {
+                toast.error(data.error || 'Error al cargar usuarios')
+            }
+        } catch (error) {
+            console.error('Error fetching users:', error)
+            toast.error('Error de conexión')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    useEffect(() => {
+        fetchUsers()
+    }, [])
+
+    const handleCreateUser = async () => {
+        if (!newName || !newEmail || !newRole) {
+            toast.error('Completa todos los campos')
+            return
+        }
+
+        setCreating(true)
+        try {
+            const response = await fetch('/api/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: newName,
+                    email: newEmail,
+                    role: newRole,
+                    sendInvite
+                })
+            })
+
+            const data = await response.json()
+
+            if (response.ok) {
+                toast.success('Usuario creado exitosamente')
+                if (data.tempPassword) {
+                    toast.info(`Contraseña temporal: ${data.tempPassword}`, { autoClose: false })
+                }
+                setDialogOpen(false)
+                setNewName('')
+                setNewEmail('')
+                setNewRole('user')
+                fetchUsers()
+            } else {
+                toast.error(data.error || 'Error al crear usuario')
+            }
+        } catch (error) {
+            console.error('Error creating user:', error)
+            toast.error('Error de conexión')
+        } finally {
+            setCreating(false)
+        }
+    }
+
+    const getRoleBadge = (role: string) => {
+        switch (role) {
+            case 'super_admin':
+                return <Badge className="bg-purple-600"><Crown className="w-3 h-3 mr-1" />Super Admin</Badge>
+            case 'admin':
+                return <Badge className="bg-blue-600"><Shield className="w-3 h-3 mr-1" />Admin</Badge>
+            case 'operator':
+                return <Badge className="bg-green-600"><User className="w-3 h-3 mr-1" />Operador</Badge>
+            default:
+                return <Badge variant="secondary"><User className="w-3 h-3 mr-1" />Usuario</Badge>
+        }
+    }
+
+    const formatDate = (dateString: string | null) => {
+        if (!dateString) return 'Nunca'
+        return new Date(dateString).toLocaleDateString('es-CL', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        })
+    }
+
+    return (
+        <div className="container mx-auto py-8 px-4">
+            <div className="flex justify-between items-center mb-8">
+                <div>
+                    <h1 className="text-3xl font-bold flex items-center gap-2">
+                        <Users className="w-8 h-8" />
+                        Gestión de Usuarios
+                    </h1>
+                    <p className="text-muted-foreground mt-1">
+                        Administra los usuarios de tu cuenta
+                    </p>
+                </div>
+
+                <div className="flex gap-2">
+                    <Button variant="outline" onClick={fetchUsers} disabled={loading}>
+                        <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                        Actualizar
+                    </Button>
+
+                    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                        <DialogTrigger asChild>
+                            <Button>
+                                <UserPlus className="w-4 h-4 mr-2" />
+                                Nuevo Usuario
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Crear Nuevo Usuario</DialogTitle>
+                                <DialogDescription>
+                                    El usuario recibirá un email con instrucciones para acceder.
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            <div className="space-y-4 py-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="name">Nombre Completo</Label>
+                                    <Input
+                                        id="name"
+                                        placeholder="Juan Pérez"
+                                        value={newName}
+                                        onChange={(e) => setNewName(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="email">Email</Label>
+                                    <Input
+                                        id="email"
+                                        type="email"
+                                        placeholder="juan@ejemplo.com"
+                                        value={newEmail}
+                                        onChange={(e) => setNewEmail(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="role">Rol</Label>
+                                    <Select value={newRole} onValueChange={setNewRole}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Selecciona un rol" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="user">Usuario</SelectItem>
+                                            <SelectItem value="operator">Operador</SelectItem>
+                                            <SelectItem value="admin">Administrador</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="flex items-center space-x-2">
+                                    <Checkbox
+                                        id="sendInvite"
+                                        checked={sendInvite}
+                                        onCheckedChange={(checked) => setSendInvite(checked as boolean)}
+                                    />
+                                    <Label htmlFor="sendInvite" className="text-sm">
+                                        Mostrar contraseña temporal (para enviar manualmente)
+                                    </Label>
+                                </div>
+                            </div>
+
+                            <DialogFooter>
+                                <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                                    Cancelar
+                                </Button>
+                                <Button onClick={handleCreateUser} disabled={creating}>
+                                    {creating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                                    Crear Usuario
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+                </div>
+            </div>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Usuarios ({users.length})</CardTitle>
+                    <CardDescription>
+                        Lista de todos los usuarios registrados en el sistema
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {loading ? (
+                        <div className="flex justify-center items-center py-12">
+                            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : users.length === 0 ? (
+                        <div className="text-center py-12 text-muted-foreground">
+                            <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                            <p>No hay usuarios registrados</p>
+                        </div>
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Usuario</TableHead>
+                                    <TableHead>Rol</TableHead>
+                                    <TableHead>Empresa</TableHead>
+                                    <TableHead>Estado</TableHead>
+                                    <TableHead>Último Acceso</TableHead>
+                                    <TableHead>Creado</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {users.map((user) => (
+                                    <TableRow key={user.id}>
+                                        <TableCell>
+                                            <div>
+                                                <p className="font-medium">{user.nombre_completo || 'Sin nombre'}</p>
+                                                <p className="text-sm text-muted-foreground">{user.email}</p>
+                                            </div>
+                                        </TableCell>
+                                        <TableCell>{getRoleBadge(user.role)}</TableCell>
+                                        <TableCell>{user.company || 'VIRA'}</TableCell>
+                                        <TableCell>
+                                            <Badge variant={user.is_active ? 'default' : 'destructive'}>
+                                                {user.is_active ? 'Activo' : 'Inactivo'}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-sm">
+                                            {formatDate(user.last_login)}
+                                        </TableCell>
+                                        <TableCell className="text-sm">
+                                            {formatDate(user.created_at)}
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
+                </CardContent>
+            </Card>
+        </div>
+    )
+}

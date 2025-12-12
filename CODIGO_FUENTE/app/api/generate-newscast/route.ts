@@ -45,7 +45,7 @@ async function getNewsFromDB(region: string, limit: number = 20) {
     .from('noticias_scrapeadas')
     .select('*')
     .eq('region', region)
-    .order('fecha_publicacion', { ascending: false })
+    .order('fecha_scraping', { ascending: false })
     .limit(limit)
 
   if (error) {
@@ -141,6 +141,8 @@ export async function POST(request: NextRequest) {
     let {
       region,
       categories = [],
+      categoryConfig, // Configuración detallada de conteos
+      specificNewsUrls, // URLs específicas (Prioridad máxima)
       targetDuration = 900, // 15 min default
       frecuencia_anuncios = 2, // Insertar anuncio cada N noticias
       plantilla_id,
@@ -202,14 +204,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 1. Obtener noticias de la DB
-    let newsItems = await getNewsFromDB(region, 50)
+    // 1. Obtener noticias de la DB (Traemos más para asegurar disponibilidad)
+    let newsItems = await getNewsFromDB(region, 150)
 
     if (newsItems.length === 0) {
       console.log('⚠️ No se encontraron noticias en DB para la región:', region)
       // Intentar obtener noticias globales como fallback
       console.log('🔄 Intentando obtener noticias globales...')
-      newsItems = await getNewsFromDB('Nacional', 20)
+      newsItems = await getNewsFromDB('Nacional', 50)
 
       if (newsItems.length === 0) {
         // Verificar si hubo error de conexión antes
@@ -230,33 +232,83 @@ export async function POST(request: NextRequest) {
 
     console.log(`📰 ${newsItems.length} noticias encontradas en DB`)
 
-    // 2. Filtrar por categorías si se especificaron
-    let filteredNews = newsItems
-    if (categories && categories.length > 0) {
-      filteredNews = newsItems.filter(news =>
-        categories.some((cat: string) =>
-          news.categoria?.toLowerCase().includes(cat.toLowerCase())
+    // 2. Selección de noticias (Manual vs Automática)
+    let selectedNews: any[] = []
+
+    if (specificNewsUrls && specificNewsUrls.length > 0) {
+      console.log(`🎯 Usando ${specificNewsUrls.length} URLs específicas`)
+
+      const { data: specificNews, error: specificError } = await supabase
+        .from('noticias_scrapeadas')
+        .select('*')
+        .in('url', specificNewsUrls)
+
+      if (specificError) {
+        console.error('Error fetching specific news:', specificError)
+      }
+
+      selectedNews = specificNews || []
+
+      if (selectedNews.length < specificNewsUrls.length) {
+        console.warn(`⚠️ Solicitadas ${specificNewsUrls.length} noticias específicas, pero solo se encontraron ${selectedNews.length} en DB`)
+      }
+
+      console.log(`✅ Selección por URL completada: ${selectedNews.length} noticias`)
+
+    } else if (categoryConfig && Object.keys(categoryConfig).length > 0) {
+      console.log('🎯 Usando configuración manual de categorías:', categoryConfig)
+
+      for (const [catName, count] of Object.entries(categoryConfig)) {
+        // Filtrar noticias de esta categoría (case insensitve)
+        const catNews = newsItems.filter(n => n.categoria?.toLowerCase().trim() === catName.toLowerCase().trim())
+
+        const toTake = Number(count)
+        if (catNews.length < toTake) {
+          console.warn(`⚠️ Solicitadas ${toTake} de '${catName}', solo encontradas ${catNews.length}`)
+        }
+
+        selectedNews.push(...catNews.slice(0, toTake))
+      }
+
+      // Eliminar duplicados
+      const seenIds = new Set()
+      selectedNews = selectedNews.filter(n => {
+        if (seenIds.has(n.id)) return false
+        seenIds.add(n.id)
+        return true
+      })
+
+      console.log(`✅ Selección manual completada: ${selectedNews.length} noticias`)
+
+    } else {
+      // Lógica automática basada en duración
+      let filteredNews = newsItems
+      if (categories && categories.length > 0) {
+        filteredNews = newsItems.filter(news =>
+          categories.some((cat: string) =>
+            news.categoria?.toLowerCase().includes(cat.toLowerCase())
+          )
         )
-      )
-      console.log(`✅ Filtradas ${filteredNews.length} noticias de categorías: ${categories.join(', ')}`)
+        console.log(`✅ Filtradas ${filteredNews.length} noticias de categorías: ${categories.join(', ')}`)
+      }
+
+      if (filteredNews.length === 0) {
+        console.log('⚠️ No hay noticias de las categorías solicitadas, usando todas')
+        filteredNews = newsItems
+      }
+
+      // Estimamos ~100 palabras promedio por noticia humanizada
+      const avgWordsPerNews = 100
+      const secondsPerNews = (avgWordsPerNews / effectiveWPM) * 60
+      const reservedTime = 30 + (adCount || 0) * 30
+      const availableNewsTime = targetDuration - reservedTime
+      const maxNews = Math.max(5, Math.ceil(availableNewsTime / secondsPerNews))
+      selectedNews = filteredNews.slice(0, maxNews)
+
+      console.log(`📰 Seleccionadas ${selectedNews.length} noticias automáticamente (estimando ${Math.round(secondsPerNews)}s/noticia)`)
     }
 
-    if (filteredNews.length === 0) {
-      console.log('⚠️ No hay noticias de las categorías solicitadas, usando todas')
-      filteredNews = newsItems
-    }
 
-    // 3. Calcular cuántas noticias necesitamos basado en WPM real
-    // Estimamos ~100 palabras promedio por noticia humanizada
-    const avgWordsPerNews = 100
-    const secondsPerNews = (avgWordsPerNews / effectiveWPM) * 60
-    // Reservar tiempo para intro (15s), outro (15s), y publicidades (30s cada una)
-    const reservedTime = 30 + (adCount || 0) * 30
-    const availableNewsTime = targetDuration - reservedTime
-    const maxNews = Math.max(5, Math.ceil(availableNewsTime / secondsPerNews))
-    const selectedNews = filteredNews.slice(0, maxNews)
-
-    console.log(`📰 Seleccionadas ${selectedNews.length} noticias (estimando ${Math.round(secondsPerNews)}s/noticia a ${effectiveWPM} WPM)`)
 
     // 4. Obtener campañas publicitarias activas (multi-tenant)
     const currentUser = await getCurrentUser()
@@ -289,6 +341,22 @@ export async function POST(request: NextRequest) {
     let totalCost = 0
     let totalTokens = 0
     let adRotationIndex = 0 // Índice para rotar publicidades (sobre array mezclado)
+
+    // 📏 CÁLCULO DINÁMICO DE PALABRAS POR NOTICIA
+    // Basado en la duración objetivo y cantidad de noticias seleccionadas
+    const introOutroDuration = 30 // 15s intro + 15s outro
+    const adsDuration = (adCount || 0) * 30 // ~30s por anuncio
+    const availableNewsTime = targetDuration - introOutroDuration - adsDuration
+    const timePerNews = availableNewsTime / Math.max(1, selectedNews.length)
+    const targetWordsPerNews = Math.max(60, Math.min(300, Math.round((timePerNews / 60) * effectiveWPM)))
+
+    console.log(`📏 === CONTROL DE DURACIÓN ===`)
+    console.log(`   🎯 Duración objetivo: ${targetDuration}s (${Math.round(targetDuration / 60)} min)`)
+    console.log(`   📰 Noticias: ${selectedNews.length}`)
+    console.log(`   ⏱️ Tiempo disponible para noticias: ${Math.round(availableNewsTime)}s`)
+    console.log(`   📝 Palabras objetivo por noticia: ~${targetWordsPerNews} palabras`)
+    console.log(`   🗣️ WPM de la voz: ${effectiveWPM}`)
+    console.log(`   =============================`)
 
     // A. Intro simple
     // A. Intro dinámica con variedad
@@ -409,7 +477,14 @@ export async function POST(request: NextRequest) {
         previousCategory
       }
 
-      const humanizedResult = await humanizeText(sanitizedContent, region, userId, transitionContext)
+      // Pasar objetivo de palabras para control de duración
+      const humanizedResult = await humanizeText(
+        sanitizedContent,
+        region,
+        userId,
+        transitionContext,
+        { targetWordCount: targetWordsPerNews }  // NUEVO: control de duración
+      )
 
       // Actualizar contadores de tokens y costos
       totalTokens += humanizedResult.tokensUsed

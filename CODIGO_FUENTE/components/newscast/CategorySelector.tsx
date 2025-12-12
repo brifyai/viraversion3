@@ -15,6 +15,7 @@ interface Category {
 interface CategorySelectorProps {
     categories: Category[]
     onCategoryChange: (categoryId: string, checked: boolean, selectedCount?: number) => void
+    onOpenNewsModal?: (categoryId: string) => void
     showCounts?: boolean
     maxPerCategory?: number
 }
@@ -22,6 +23,7 @@ interface CategorySelectorProps {
 export function CategorySelector({
     categories,
     onCategoryChange,
+    onOpenNewsModal,
     showCounts = false,
     maxPerCategory = 10
 }: CategorySelectorProps) {
@@ -76,10 +78,10 @@ export function CategorySelector({
                         <div
                             key={category.id}
                             className={`flex flex-col p-3 rounded-lg border-2 transition-all ${category.checked
-                                    ? 'border-blue-500 bg-blue-50'
-                                    : hasNews
-                                        ? 'border-gray-200 hover:border-gray-300'
-                                        : 'border-gray-100 bg-gray-50 opacity-60'
+                                ? 'border-blue-500 bg-blue-50'
+                                : hasNews
+                                    ? 'border-gray-200 hover:border-gray-300'
+                                    : 'border-gray-100 bg-gray-50 opacity-60'
                                 }`}
                         >
                             {/* Header con checkbox y nombre */}
@@ -116,8 +118,8 @@ export function CategorySelector({
                                     <Badge
                                         variant="outline"
                                         className={`text-xs ${hasNews
-                                                ? 'bg-green-50 text-green-700 border-green-200'
-                                                : 'bg-gray-100 text-gray-500'
+                                            ? 'bg-green-50 text-green-700 border-green-200'
+                                            : 'bg-gray-100 text-gray-500'
                                             }`}
                                     >
                                         {available}
@@ -125,34 +127,48 @@ export function CategorySelector({
                                 )}
                             </div>
 
-                            {/* Selector de cantidad (solo si showCounts y está seleccionada) */}
+                            {/* Selector de cantidad + Botón Ver Noticias */}
                             {showCounts && category.checked && hasNews && (
-                                <div className="flex items-center justify-between mt-3 pt-2 border-t border-blue-200">
-                                    <span className="text-xs text-gray-600">Usar:</span>
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                handleDecrement(category.id, selected)
-                                            }}
-                                            className="w-6 h-6 flex items-center justify-center rounded bg-gray-200 hover:bg-gray-300 transition-colors"
-                                        >
-                                            <Minus className="w-3 h-3" />
-                                        </button>
-                                        <span className="w-6 text-center font-semibold text-blue-700">
-                                            {selected}
-                                        </span>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                handleIncrement(category.id, selected, available)
-                                            }}
-                                            disabled={selected >= Math.min(available, maxPerCategory)}
-                                            className="w-6 h-6 flex items-center justify-center rounded bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            <Plus className="w-3 h-3" />
-                                        </button>
+                                <div className="mt-3 pt-2 border-t border-blue-200 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs text-gray-600">Usar:</span>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    handleDecrement(category.id, selected)
+                                                }}
+                                                className="w-6 h-6 flex items-center justify-center rounded bg-gray-200 hover:bg-gray-300 transition-colors"
+                                            >
+                                                <Minus className="w-3 h-3" />
+                                            </button>
+                                            <span className="w-6 text-center font-semibold text-blue-700">
+                                                {selected}
+                                            </span>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    handleIncrement(category.id, selected, available)
+                                                }}
+                                                disabled={selected >= Math.min(available, maxPerCategory)}
+                                                className="w-6 h-6 flex items-center justify-center rounded bg-blue-500 hover:bg-blue-600 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                <Plus className="w-3 h-3" />
+                                            </button>
+                                        </div>
                                     </div>
+
+                                    {onOpenNewsModal && (
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                onOpenNewsModal(category.id)
+                                            }}
+                                            className="w-full text-xs py-1.5 bg-white border border-blue-300 text-blue-600 rounded hover:bg-blue-50 transition-colors flex items-center justify-center gap-1 font-medium"
+                                        >
+                                            Ver Noticias
+                                        </button>
+                                    )}
                                 </div>
                             )}
                         </div>
