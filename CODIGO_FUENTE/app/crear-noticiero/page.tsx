@@ -57,6 +57,7 @@ interface NewsPreview {
   fuente: string
   fuente_id: string
   imagen_url?: string
+  fecha_publicacion?: string  // ✅ Fecha extraída de URL
   selected?: boolean
 }
 
@@ -96,8 +97,8 @@ export default function CrearNoticiero() {
   // Estado de pre-procesamiento
   const [isPreProcessing, setIsPreProcessing] = useState(false)
 
-  // Selección de fuentes
-  const [availableSources, setAvailableSources] = useState<{ id: string, nombre_fuente: string, url: string }[]>([])
+  // Selección de fuentes (incluye region para indicador visual)
+  const [availableSources, setAvailableSources] = useState<{ id: string, nombre_fuente: string, url: string, region: string }[]>([])
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
   const [loadingSources, setLoadingSources] = useState(false)
 
@@ -227,7 +228,10 @@ export default function CrearNoticiero() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ sourceIds: selectedSourceIds })
+        body: JSON.stringify({
+          sourceIds: selectedSourceIds,
+          region: selectedRegion  // ✅ Enviar región para filtrar fuentes
+        })
       })
 
       const data = await response.json()
@@ -243,11 +247,22 @@ export default function CrearNoticiero() {
       setScannedNews(data.noticias || [])
       setHasScanned(true)
 
+      // ✅ Debug: Ver qué categorías devuelve el API
+      console.log('📊 Categorías del API:', Object.keys(data.por_categoria || {}))
+      console.log('📊 Conteos:', data.por_categoria)
+
       // Actualizar conteos de categorías con los datos reales del escaneo
       // Calcular nuevas categorías y pre-seleccionar noticias
       const newCategories = categories.map(cat => {
         const categoryName = cat.label
-        const count = data.por_categoria[categoryName] || 0
+        // ✅ Buscar coincidencia case-insensitive
+        const matchingKey = Object.keys(data.por_categoria || {}).find(
+          key => key.toLowerCase() === categoryName.toLowerCase()
+        )
+        const count = matchingKey ? data.por_categoria[matchingKey] : 0
+
+        console.log(`   ${categoryName}: encontradas ${count} (key: ${matchingKey || 'ninguna'})`)
+
         return {
           ...cat,
           count,
@@ -257,11 +272,14 @@ export default function CrearNoticiero() {
 
       setCategories(newCategories)
 
-      // Sincronizar URLs seleccionadas
+      // Sincronizar URLs seleccionadas (con comparación case-insensitive)
       const newSelectedUrls: string[] = []
       newCategories.forEach(cat => {
         if (cat.selectedCount && cat.selectedCount > 0) {
-          const catNews = (data.noticias || []).filter((n: any) => n.categoria === cat.label)
+          // ✅ Comparación case-insensitive para categorías
+          const catNews = (data.noticias || []).filter((n: any) =>
+            n.categoria?.toLowerCase() === cat.label.toLowerCase()
+          )
           if (catNews.length > 0) {
             newSelectedUrls.push(...catNews.slice(0, cat.selectedCount).map((n: any) => n.url))
           }
@@ -442,15 +460,29 @@ export default function CrearNoticiero() {
       try {
         toast.info('📥 Obteniendo contenido completo de las noticias seleccionadas...', { autoClose: 3000 })
 
+        // ✅ MEJORADO: Enviar TODAS las URLs seleccionadas, aunque no estén en scannedNews
         const newsToScrape = selectedNewsUrls.map(url => {
           const item = scannedNews.find(n => n.url === url)
-          return item ? {
-            url: item.url,
-            titulo: item.titulo,
-            categoria: item.categoria,
-            fuente: item.fuente
-          } : null
-        }).filter(n => n !== null)
+          if (item) {
+            return {
+              url: item.url,
+              titulo: item.titulo,
+              categoria: item.categoria,
+              fuente: item.fuente
+            }
+          } else {
+            // URL seleccionada pero no encontrada en scannedNews - enviar con datos básicos
+            console.warn(`⚠️ URL no encontrada en scannedNews, enviando con datos básicos: ${url}`)
+            return {
+              url: url,
+              titulo: 'Noticia seleccionada',
+              categoria: 'general',
+              fuente: 'Fuente desconocida'
+            }
+          }
+        })
+
+        console.log(`📤 Enviando ${newsToScrape.length} noticias al deep scraping (de ${selectedNewsUrls.length} seleccionadas)`)
 
         if (newsToScrape.length > 0) {
           const scrapeRes = await fetch('/api/scraping/deep', {
@@ -643,29 +675,49 @@ export default function CrearNoticiero() {
                       >
                         {selectedSourceIds.length === availableSources.length ? 'Todas' : 'Seleccionar Todo'}
                       </div>
-                      {availableSources.map(source => (
-                        <div
-                          key={source.id}
-                          onClick={() => {
-                            setSelectedSourceIds(prev =>
-                              prev.includes(source.id)
-                                ? prev.filter(id => id !== source.id)
-                                : [...prev, source.id]
-                            )
-                          }}
-                          className={`
-                            cursor-pointer px-3 py-1 rounded-full text-xs font-medium border transition-colors flex items-center gap-1
-                            ${selectedSourceIds.includes(source.id)
-                              ? 'bg-blue-100 border-blue-400 text-blue-700'
-                              : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}
-                          `}
-                        >
-                          {source.nombre_fuente}
-                          {selectedSourceIds.includes(source.id) && (
-                            <span className="text-blue-500 text-[10px]">✓</span>
-                          )}
-                        </div>
-                      ))}
+                      {availableSources.map(source => {
+                        // ✅ Determinar si la fuente es relevante para la región seleccionada
+                        const sourceRegion = (source as any).region || 'Nacional'
+                        const isRelevant = !selectedRegion ||
+                          sourceRegion.toLowerCase() === 'nacional' ||
+                          sourceRegion.toLowerCase() === selectedRegion.toLowerCase()
+
+                        return (
+                          <div
+                            key={source.id}
+                            onClick={() => {
+                              setSelectedSourceIds(prev =>
+                                prev.includes(source.id)
+                                  ? prev.filter(id => id !== source.id)
+                                  : [...prev, source.id]
+                              )
+                            }}
+                            className={`
+                              cursor-pointer px-3 py-1 rounded-full text-xs font-medium border transition-colors flex items-center gap-1
+                              ${selectedSourceIds.includes(source.id)
+                                ? isRelevant
+                                  ? 'bg-blue-100 border-blue-400 text-blue-700'
+                                  : 'bg-gray-100 border-gray-300 text-gray-600'
+                                : isRelevant
+                                  ? 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                  : 'bg-gray-50 border-gray-100 text-gray-400'}
+                            `}
+                            title={`Región: ${sourceRegion}`}
+                          >
+                            {source.nombre_fuente}
+                            {/* Mostrar indicador de región si no es Nacional */}
+                            {sourceRegion.toLowerCase() !== 'nacional' && (
+                              <span className={`text-[9px] px-1 py-0.5 rounded ${isRelevant ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-500'
+                                }`}>
+                                {sourceRegion.substring(0, 3)}
+                              </span>
+                            )}
+                            {selectedSourceIds.includes(source.id) && (
+                              <span className="text-blue-500 text-[10px]">✓</span>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   ) : (
                     <p className="text-sm text-gray-500 italic">No se encontraron fuentes asociadas a tu cuenta.</p>

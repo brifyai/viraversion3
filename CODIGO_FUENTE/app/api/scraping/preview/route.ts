@@ -16,6 +16,7 @@ interface NewsPreview {
     fuente: string
     fuente_id: string
     imagen_url?: string
+    fecha_publicacion?: string  // ✅ Fecha extraída de la URL
 }
 
 // Función para categorizar noticias automáticamente
@@ -93,12 +94,13 @@ async function scanSourceHomepage(source: { id: string, url: string, nombre_fuen
     try {
         console.log(`🔍 Escaneando: ${source.nombre_fuente} - ${source.url}`)
 
+        // ✅ OPTIMIZADO: Solo render_js para páginas principales (5 créditos vs 40)
+        // premium_proxy y country_code solo son necesarios si el sitio bloquea
+        // Antes: 40 créditos | Ahora: 5 créditos por fuente
         const params = new URLSearchParams({
             api_key: SCRAPINGBEE_API_KEY,
             url: source.url,
-            render_js: 'true',
-            premium_proxy: 'true',
-            country_code: 'cl'
+            render_js: 'true'
         })
 
         const response = await fetch(`${SCRAPINGBEE_BASE_URL}?${params.toString()}`)
@@ -122,6 +124,67 @@ async function scanSourceHomepage(source: { id: string, url: string, nombre_fuen
     }
 }
 
+// ✅ Función para extraer fecha de la URL (patrón común en sitios de noticias)
+function extractDateFromUrl(url: string): Date | null {
+    // Patrones comunes de fechas en URLs
+    const patterns = [
+        // /2024/12/12/ o /2024-12-12/
+        /\/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})\//,
+        // /12-12-2024/ o /12/12/2024/
+        /\/(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})\//,
+        // ?date=2024-12-12
+        /date=(\d{4})-(\d{1,2})-(\d{1,2})/,
+        // /noticias/2024/diciembre/12/
+        /\/(\d{4})\/(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\/(\d{1,2})\//i,
+    ]
+
+    for (const pattern of patterns) {
+        const match = url.match(pattern)
+        if (match) {
+            let year, month, day
+
+            if (match[2] && isNaN(parseInt(match[2]))) {
+                // Es un nombre de mes
+                const monthNames: { [key: string]: number } = {
+                    'enero': 0, 'febrero': 1, 'marzo': 2, 'abril': 3,
+                    'mayo': 4, 'junio': 5, 'julio': 6, 'agosto': 7,
+                    'septiembre': 8, 'octubre': 9, 'noviembre': 10, 'diciembre': 11
+                }
+                year = parseInt(match[1])
+                month = monthNames[match[2].toLowerCase()]
+                day = parseInt(match[3])
+            } else if (parseInt(match[1]) > 31) {
+                // Formato YYYY/MM/DD
+                year = parseInt(match[1])
+                month = parseInt(match[2]) - 1
+                day = parseInt(match[3])
+            } else {
+                // Formato DD/MM/YYYY
+                day = parseInt(match[1])
+                month = parseInt(match[2]) - 1
+                year = parseInt(match[3])
+            }
+
+            if (year && month !== undefined && day) {
+                return new Date(year, month, day)
+            }
+        }
+    }
+
+    return null
+}
+
+// ✅ Función para verificar si una fecha es reciente (máximo N días de antigüedad)
+function isNewsRecent(dateFromUrl: Date | null, maxDaysOld: number = 2): boolean {
+    if (!dateFromUrl) return true // Si no hay fecha, asumimos que es reciente
+
+    const now = new Date()
+    const diffTime = now.getTime() - dateFromUrl.getTime()
+    const diffDays = diffTime / (1000 * 60 * 60 * 24)
+
+    return diffDays <= maxDaysOld
+}
+
 // Parser genérico de noticias desde HTML
 function parseNewsFromHTML(html: string, source: { id: string, url: string, nombre_fuente: string }): NewsPreview[] {
     const noticias: NewsPreview[] = []
@@ -141,6 +204,7 @@ function parseNewsFromHTML(html: string, source: { id: string, url: string, nomb
 
     const seenUrls = new Set<string>()
     const baseUrl = new URL(source.url).origin
+    const MAX_DAYS_OLD = 2 // Solo noticias de los últimos 2 días
 
     for (const pattern of patterns) {
         let match
@@ -158,6 +222,13 @@ function parseNewsFromHTML(html: string, source: { id: string, url: string, nomb
             if (url.includes('#') || url.includes('javascript:')) continue
             if (titulo.length < 20 || titulo.length > 300) continue
 
+            // ✅ NUEVO: Extraer fecha de la URL y filtrar viejas
+            const dateFromUrl = extractDateFromUrl(url)
+            if (!isNewsRecent(dateFromUrl, MAX_DAYS_OLD)) {
+                console.log(`⏰ Noticia vieja filtrada (${dateFromUrl?.toLocaleDateString()}): ${titulo.substring(0, 50)}...`)
+                continue
+            }
+
             // Limpiar título
             titulo = titulo.trim().replace(/\s+/g, ' ')
 
@@ -172,7 +243,9 @@ function parseNewsFromHTML(html: string, source: { id: string, url: string, nomb
                 url,
                 categoria,
                 fuente: source.nombre_fuente,
-                fuente_id: source.id
+                fuente_id: source.id,
+                // ✅ NUEVO: Agregar fecha extraída de URL (si existe)
+                fecha_publicacion: dateFromUrl?.toISOString()
             })
 
             if (noticias.length >= 50) break // Límite por fuente
@@ -183,8 +256,11 @@ function parseNewsFromHTML(html: string, source: { id: string, url: string, nomb
     return noticias
 }
 
-// Helper para obtener fuentes del usuario
-async function getUserSources(resourceOwnerId: string): Promise<{ id: string, url: string, nombre_fuente: string, region: string }[]> {
+// Helper para obtener fuentes del usuario (con filtro opcional por región)
+async function getUserSources(
+    resourceOwnerId: string,
+    filterRegion?: string
+): Promise<{ id: string, url: string, nombre_fuente: string, region: string }[]> {
     try {
         const { data: suscripciones, error: subError } = await supabaseAdmin
             .from('user_fuentes_suscripciones')
@@ -203,7 +279,7 @@ async function getUserSources(resourceOwnerId: string): Promise<{ id: string, ur
             .eq('esta_activo', true)
 
         if (!subError && suscripciones && suscripciones.length > 0) {
-            return suscripciones
+            let fuentes = suscripciones
                 .filter((s: any) => s.fuente?.esta_activo)
                 .map((s: any) => ({
                     id: s.fuente.id,
@@ -211,6 +287,19 @@ async function getUserSources(resourceOwnerId: string): Promise<{ id: string, ur
                     nombre_fuente: s.fuente.nombre_fuente,
                     region: s.fuente.region
                 }))
+
+            // ✅ Filtrar por región si se especifica
+            // Incluir fuentes de la región específica + fuentes "Nacional" (siempre útiles)
+            if (filterRegion && filterRegion !== 'Nacional') {
+                const regionLower = filterRegion.toLowerCase()
+                fuentes = fuentes.filter(f =>
+                    f.region.toLowerCase() === regionLower ||
+                    f.region.toLowerCase() === 'nacional'
+                )
+                console.log(`🌍 Filtradas ${fuentes.length} fuentes para región: ${filterRegion}`)
+            }
+
+            return fuentes
         }
 
         // Sin suscripciones = sin fuentes (el usuario debe agregar desde /activos)
@@ -253,19 +342,25 @@ export async function POST(request: NextRequest) {
 
         const resourceOwnerId = getResourceOwnerId(user)
 
-        // Obtener body para ver si hay filtro de fuentes
+        // Obtener body para ver si hay filtro de fuentes y región
         let sourceIds: string[] | undefined
+        let filterRegion: string | undefined
         try {
             const body = await request.json()
             if (body.sourceIds && Array.isArray(body.sourceIds)) {
                 sourceIds = body.sourceIds
             }
+            // ✅ NUEVO: Aceptar región para filtrar fuentes
+            if (body.region && typeof body.region === 'string') {
+                filterRegion = body.region
+                console.log(`🌍 Región para filtrar: ${filterRegion}`)
+            }
         } catch (e) {
             // Body vacío es válido (escanear todas)
         }
 
-        // Obtener fuentes disponibles
-        let fuentes = await getUserSources(resourceOwnerId)
+        // Obtener fuentes disponibles (filtradas por región si se especifica)
+        let fuentes = await getUserSources(resourceOwnerId, filterRegion)
 
         if (fuentes.length === 0) {
             return NextResponse.json({

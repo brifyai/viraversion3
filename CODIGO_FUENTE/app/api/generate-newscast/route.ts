@@ -39,12 +39,17 @@ async function normalizeRegion(inputRegion: string): Promise<string> {
   return 'Nacional'
 }
 
-// Función para obtener noticias de la DB
-async function getNewsFromDB(region: string, limit: number = 20) {
+// Función para obtener noticias de la DB (solo últimas 24-48 horas)
+async function getNewsFromDB(region: string, limit: number = 20, maxHoursOld: number = 24) {
+  // ✅ Calcular fecha límite (por defecto 24 horas atrás)
+  const cutoffDate = new Date()
+  cutoffDate.setHours(cutoffDate.getHours() - maxHoursOld)
+
   const { data, error } = await supabase
     .from('noticias_scrapeadas')
     .select('*')
     .eq('region', region)
+    .gte('fecha_scraping', cutoffDate.toISOString())  // ✅ Solo noticias recientes
     .order('fecha_scraping', { ascending: false })
     .limit(limit)
 
@@ -53,6 +58,7 @@ async function getNewsFromDB(region: string, limit: number = 20) {
     return []
   }
 
+  console.log(`📰 ${data?.length || 0} noticias encontradas de las últimas ${maxHoursOld} horas para ${region}`)
   return data || []
 }
 
@@ -204,14 +210,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 1. Obtener noticias de la DB (Traemos más para asegurar disponibilidad)
-    let newsItems = await getNewsFromDB(region, 150)
+    // 1. Obtener noticias de la DB (máximo 24 horas de antigüedad)
+    let newsItems = await getNewsFromDB(region, 150, 24)
+
+    // Si no hay suficientes noticias recientes, expandir a 48 horas
+    if (newsItems.length < 10) {
+      console.log('⚠️ Pocas noticias de 24h, expandiendo a 48 horas...')
+      newsItems = await getNewsFromDB(region, 150, 48)
+    }
 
     if (newsItems.length === 0) {
       console.log('⚠️ No se encontraron noticias en DB para la región:', region)
-      // Intentar obtener noticias globales como fallback
-      console.log('🔄 Intentando obtener noticias globales...')
-      newsItems = await getNewsFromDB('Nacional', 50)
+      // Intentar obtener noticias globales como fallback (últimas 24h)
+      console.log('🔄 Intentando obtener noticias nacionales de las últimas 24h...')
+      newsItems = await getNewsFromDB('Nacional', 50, 24)
+
+      // Si aún no hay, expandir a 48h
+      if (newsItems.length < 5) {
+        console.log('🔄 Expandiendo a noticias nacionales de 48h...')
+        newsItems = await getNewsFromDB('Nacional', 50, 48)
+      }
 
       if (newsItems.length === 0) {
         // Verificar si hubo error de conexión antes
@@ -224,7 +242,7 @@ export async function POST(request: NextRequest) {
         }
 
         return NextResponse.json({
-          error: 'No hay noticias disponibles. Por favor ejecuta el scraping primero.',
+          error: 'No hay noticias recientes disponibles (últimas 48 horas). Por favor ejecuta el scraping primero.',
           action: 'POST /api/scraping'
         }, { status: 404 })
       }
@@ -308,9 +326,28 @@ export async function POST(request: NextRequest) {
       console.log(`📰 Seleccionadas ${selectedNews.length} noticias automáticamente (estimando ${Math.round(secondsPerNews)}s/noticia)`)
     }
 
+    // ✅ UNIVERSAL: Verificar y limitar noticias para TODOS los métodos de selección
+    // Esto aplica tanto a URLs específicas como a selección por categorías
+    {
+      const avgSecondsPerNews = (100 / effectiveWPM) * 60  // ~40s a 150 WPM
+      const reservedTime = 30 + (adCount || 0) * 30  // Intro/outro + anuncios
+      const availableNewsTime = targetDuration - reservedTime
+      const maxNewsForDuration = Math.floor(availableNewsTime / avgSecondsPerNews)
 
+      console.log(`📏 === VERIFICACIÓN DE DURACIÓN ===`)
+      console.log(`   🎯 Tiempo objetivo: ${Math.round(targetDuration / 60)} min (${targetDuration}s)`)
+      console.log(`   📰 Noticias seleccionadas: ${selectedNews.length}`)
+      console.log(`   📊 Máximo que cabe: ${maxNewsForDuration} noticias`)
 
-    // 4. Obtener campañas publicitarias activas (multi-tenant)
+      if (selectedNews.length > maxNewsForDuration && maxNewsForDuration > 0) {
+        console.warn(`   ⚠️ EXCESO: ${selectedNews.length - maxNewsForDuration} noticias de más`)
+        console.warn(`   ✂️ Limitando a ${maxNewsForDuration} noticias para respetar duración`)
+        selectedNews = selectedNews.slice(0, maxNewsForDuration)
+      } else {
+        console.log(`   ✅ OK: Las noticias caben en el tiempo objetivo`)
+      }
+      console.log(`   ===============================`)
+    }
     const currentUser = await getCurrentUser()
     const resourceOwnerId = currentUser ? getResourceOwnerId(currentUser) : userId
 
@@ -485,6 +522,9 @@ export async function POST(request: NextRequest) {
         transitionContext,
         { targetWordCount: targetWordsPerNews }  // NUEVO: control de duración
       )
+
+      // ✅ NUEVO: Pequeño delay para evitar rate limiting de Chutes AI
+      await new Promise(resolve => setTimeout(resolve, 500))
 
       // Actualizar contadores de tokens y costos
       totalTokens += humanizedResult.tokensUsed

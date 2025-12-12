@@ -139,6 +139,11 @@ export const config = {
         '/bibliotecas/:path*',
         '/plantillas/:path*',
         '/campanas/:path*',
+        // ✅ NUEVO: APIs que necesitan mantener sesión activa
+        '/api/generate-newscast',
+        '/api/scraping/:path*',
+        '/api/text-to-speech/:path*',
+        '/api/radios/:path*',
         // Proteger algunos API endpoints
         '/api/cron/:path*'
     ]

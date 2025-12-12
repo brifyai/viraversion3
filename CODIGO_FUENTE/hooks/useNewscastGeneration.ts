@@ -47,6 +47,32 @@ export function useNewscastGeneration() {
         setStatus('Iniciando generación...')
         setError(null)
 
+        // ✅ NUEVO: Keep-alive para mantener sesión activa durante generación larga
+        let keepAliveInterval: NodeJS.Timeout | null = null
+
+        const startKeepAlive = () => {
+            // Refrescar sesión cada 30 segundos para evitar expiración
+            keepAliveInterval = setInterval(async () => {
+                try {
+                    // Llamada ligera para mantener sesión activa
+                    await fetch('/api/auth/session', {
+                        method: 'GET',
+                        credentials: 'include'
+                    })
+                    console.log('🔄 Sesión renovada durante generación')
+                } catch (e) {
+                    console.warn('⚠️ Error renovando sesión:', e)
+                }
+            }, 30000) // Cada 30 segundos
+        }
+
+        const stopKeepAlive = () => {
+            if (keepAliveInterval) {
+                clearInterval(keepAliveInterval)
+                keepAliveInterval = null
+            }
+        }
+
         try {
             // Validaciones básicas
             if (!config.region) {
@@ -59,6 +85,9 @@ export function useNewscastGeneration() {
 
             setProgress(10)
             setStatus('Conectando con el servidor...')
+
+            // ✅ Iniciar keep-alive antes del request largo
+            startKeepAlive()
 
             // Llamada real al backend
             const response = await fetch('/api/generate-newscast', {
@@ -130,6 +159,8 @@ export function useNewscastGeneration() {
                 error: errorMessage
             }
         } finally {
+            // ✅ Detener keep-alive al terminar
+            stopKeepAlive()
             setIsGenerating(false)
         }
     }

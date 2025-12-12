@@ -19,7 +19,15 @@ if (!supabaseUrl || !supabaseAnonKey) {
  * Respeta RLS y mantiene sesión del usuario
  */
 export function createSupabaseBrowser() {
-  return createBrowserClient(supabaseUrl, supabaseAnonKey)
+  return createBrowserClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      // ✅ NUEVO: Mejora manejo de sesión para evitar logouts inesperados
+      detectSessionInUrl: true,
+      flowType: 'pkce',
+      autoRefreshToken: true,
+      persistSession: true,
+    }
+  })
 }
 
 // ============================================

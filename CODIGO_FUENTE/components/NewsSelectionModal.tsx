@@ -107,11 +107,32 @@ export function NewsSelectionModal({
                                                 <Badge variant="outline" className="text-[10px] h-5">
                                                     {item.fuente}
                                                 </Badge>
-                                                {item.fecha_publicacion && (
-                                                    <span className="text-[10px] text-gray-400">
-                                                        {new Date(item.fecha_publicacion).toLocaleDateString()}
-                                                    </span>
-                                                )}
+                                                {item.fecha_publicacion && (() => {
+                                                    // ✅ Mostrar fecha relativa (Hoy, Ayer, hace X días)
+                                                    const fecha = new Date(item.fecha_publicacion)
+                                                    const hoy = new Date()
+                                                    const diffDays = Math.floor((hoy.getTime() - fecha.getTime()) / (1000 * 60 * 60 * 24))
+
+                                                    let textoFecha = ''
+                                                    let colorClass = ''
+
+                                                    if (diffDays === 0) {
+                                                        textoFecha = '📗 Hoy'
+                                                        colorClass = 'bg-green-100 text-green-700'
+                                                    } else if (diffDays === 1) {
+                                                        textoFecha = '📘 Ayer'
+                                                        colorClass = 'bg-blue-100 text-blue-700'
+                                                    } else {
+                                                        textoFecha = `⚠️ Hace ${diffDays} días`
+                                                        colorClass = 'bg-amber-100 text-amber-700'
+                                                    }
+
+                                                    return (
+                                                        <span className={`text-[10px] px-2 py-0.5 rounded ${colorClass}`}>
+                                                            {textoFecha}
+                                                        </span>
+                                                    )
+                                                })()}
                                             </div>
                                         </div>
                                     </div>
