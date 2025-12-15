@@ -15,6 +15,7 @@ interface NewscastConfig {
     voiceModel?: string
     voiceWPM?: number // Palabras por minuto de la voz para cálculo preciso
     timeStrategy?: string
+    userId?: string // ✅ NUEVO: userId para fallback cuando sesión expira
     audioConfig?: {
         cortinas_enabled: boolean
         cortinas_frequency: number
@@ -83,7 +84,8 @@ export function useNewscastGeneration() {
                     voiceModel: config.voiceModel || 'default',
                     voiceWPM: config.voiceWPM || 150, // WPM para cálculo de duración
                     timeStrategy: config.timeStrategy || 'auto',
-                    audioConfig: config.audioConfig
+                    audioConfig: config.audioConfig,
+                    userId: config.userId // ✅ NUEVO: enviar para fallback de auth
                 })
             })
 

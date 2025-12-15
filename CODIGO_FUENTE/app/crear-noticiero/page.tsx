@@ -13,6 +13,7 @@ import { DurationSlider } from '@/components/newscast/DurationSlider'
 import { GenerateButton } from '@/components/newscast/GenerateButton'
 import { VoiceSelector } from '@/components/newscast/VoiceSelector'
 import { useNewscastGeneration } from '@/hooks/useNewscastGeneration'
+import { useSupabaseUser } from '@/hooks/use-supabase-user'  // ✅ Para obtener userId
 import { Save, Settings, Music, Clock, Search, Loader2, Newspaper, CheckCircle } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
@@ -62,6 +63,9 @@ interface NewsPreview {
 }
 
 export default function CrearNoticiero() {
+  // ✅ Obtener sesión del usuario para fallback de auth
+  const { session } = useSupabaseUser()
+
   // Estados principales
   const [selectedRegion, setSelectedRegion] = useState('')
   const [selectedRadio, setSelectedRadio] = useState('')
@@ -558,7 +562,8 @@ export default function CrearNoticiero() {
         background_music_enabled: false,
         background_music_id: null,
         background_music_volume: 0.2
-      }
+      },
+      userId: session?.user?.id  // ✅ NUEVO: Para fallback cuando sesión expira
     } as any)
 
     // Si fue exitoso, navegar al timeline

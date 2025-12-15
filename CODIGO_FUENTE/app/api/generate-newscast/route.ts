@@ -8,6 +8,7 @@ import { CHUTES_CONFIG, getChutesHeaders } from '@/lib/chutes-config'
 import { applyIntelligentAudioPlacement, TimelineItem } from '@/lib/audio-placement'
 import { humanizeText, TransitionContext, sanitizeForTTS } from '@/lib/humanize-text'
 import { planificarNoticiero, calcularImportancia, PlanNoticiero } from '@/lib/director-ai'
+import { buildFullScript, NewsForScript, ScriptSegment, getTransitionsForNews } from '@/lib/script-builder'
 
 // Cliente Supabase
 const supabase = supabaseAdmin
@@ -105,9 +106,10 @@ export async function POST(request: NextRequest) {
   try {
     const config = await request.json()
 
-    // Autenticación: Intentar sesión de usuario o CRON_SECRET
+    // Autenticación: Intentar sesión de usuario o CRON_SECRET o userId del body
     const session = await getSupabaseSession();
     let userId = session?.user?.id;
+    let authMethod = 'session'
 
     // Si no hay sesión, verificar CRON_SECRET
     if (!userId) {
@@ -118,18 +120,40 @@ export async function POST(request: NextRequest) {
         // Si es una llamada autenticada por cron, el userId debe venir en el body
         if (config.userId) {
           userId = config.userId;
+          authMethod = 'cron'
           console.log(`🤖 Acceso autorizado por CRON_SECRET para usuario: ${userId}`);
         } else {
           console.warn('⚠️ Llamada CRON sin userId en el body');
-          // Opcional: Usar un ID de sistema o fallar
-          // return NextResponse.json({ error: 'UserId requerido para ejecución cron' }, { status: 400 });
         }
+      }
+    }
+
+    // ✅ FALLBACK: Si la sesión expiró pero el frontend envió userId, verificar en DB
+    // Esto ocurre después de scraping largo donde el token expira
+    if (!userId && config.userId) {
+      console.log('⚠️ Sesión expirada, intentando fallback con userId del body...')
+
+      // Verificar que el usuario existe en la DB
+      const { data: userCheck, error: userError } = await supabase
+        .from('users')
+        .select('id, email, role')
+        .eq('id', config.userId)
+        .single()
+
+      if (userCheck && !userError) {
+        userId = config.userId
+        authMethod = 'fallback'
+        console.log(`✅ Fallback exitoso: Usuario verificado ${userCheck.email} (${userCheck.role})`)
+      } else {
+        console.error('❌ Fallback fallido: userId no encontrado en DB')
       }
     }
 
     if (!userId) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
     }
+
+    console.log(`🔐 Autenticación exitosa via ${authMethod}: ${userId}`)
 
     // ✅ MEJORA: Cachear email al inicio para evitar revalidación posterior
     const cachedUserEmail = session?.user?.email || 'system@local'
@@ -534,6 +558,29 @@ export async function POST(request: NextRequest) {
     // ✅ MEJORA: Variables para compensación dinámica
     let deficitAcumulado = 0
 
+    // 🎬 SCRIPT BUILDER: Generar estructura natural del noticiero
+    const scriptInput = {
+      noticias: noticiasValidas.map((n: any) => ({
+        id: n.id,
+        titulo: n.titulo,
+        categoria: n.categoria || 'general',
+        contenido: n.contenido || n.resumen || '',
+        palabras_objetivo: n.palabras_objetivo || 200,
+        segundos_asignados: n.segundos_asignados || 40,
+        es_destacada: n.es_destacada || false
+      })) as NewsForScript[],
+      duracionObjetivoSegundos: targetDuration,
+      wpm: effectiveWPM,
+      incluirComentarios: true,
+      incluirPreguntasRetoricas: true,
+      region
+    }
+
+    const builtScript = buildFullScript(scriptInput)
+
+    // 🎬 Obtener transiciones para integrar en el contenido de cada noticia
+    const newsTransitions = getTransitionsForNews(builtScript)
+
     // B. Noticias con publicidad/cortinas intercaladas según plan del Director
     for (let i = 0; i < noticiasValidas.length; i++) {
       const news = noticiasValidas[i] as any
@@ -542,6 +589,12 @@ export async function POST(request: NextRequest) {
 
       // ✅ MEJORA: Agregar déficit acumulado a esta noticia
       const palabrasConCompensacion = (news.palabras_objetivo || 200) + Math.round(deficitAcumulado / 60 * effectiveWPM)
+
+      // 🎬 Obtener transiciones para esta noticia
+      const transitions = newsTransitions.get(news.id) || { preText: '', postText: '' }
+      if (transitions.preText) {
+        console.log(`   🎬 Transición: "${transitions.preText.substring(0, 40)}..."`)
+      }
 
       console.log(`🧠 Procesando noticia ${i + 1}/${noticiasValidas.length}: ${news.titulo}`)
       console.log(`   📝 Palabras objetivo: ${palabrasConCompensacion}${deficitAcumulado > 0 ? ` (+${Math.round(deficitAcumulado)}s compensación)` : ''}`)
@@ -568,6 +621,15 @@ export async function POST(request: NextRequest) {
         { targetWordCount: palabrasConCompensacion }
       )
 
+      // 🎬 INTEGRAR transiciones en el contenido (NO como items separados)
+      let finalContent = humanizedResult.content
+      if (transitions.preText) {
+        finalContent = transitions.preText + ' ' + finalContent
+      }
+      if (transitions.postText) {
+        finalContent = finalContent + ' ' + transitions.postText
+      }
+
       // ✅ MEJORA: Delay aumentado a 2.5s + backoff progresivo para evitar rate limiting (429)
       const baseDelay = 2500
       const progressiveDelay = baseDelay + (i * 300) // Cada noticia espera 300ms más
@@ -578,7 +640,7 @@ export async function POST(request: NextRequest) {
       totalCost += humanizedResult.cost
 
       // Estimar duración usando el WPM real de la voz seleccionada
-      const wordCount = humanizedResult.content.split(' ').length
+      const wordCount = finalContent.split(' ').length
       const estimatedDuration = Math.ceil((wordCount / effectiveWPM) * 60)
 
       // ✅ MEJORA: Calcular déficit para compensar en siguiente noticia
@@ -597,13 +659,15 @@ export async function POST(request: NextRequest) {
         type: 'news',
         title: news.titulo,
         originalContent: news.contenido,
-        content: humanizedResult.content,
+        content: finalContent,  // ✅ Contenido con transiciones integradas
         duration: estimatedDuration,
         source: news.fuente,
         category: news.categoria,
         isHumanized: true,
         newsId: news.id,
-        voiceId: voiceModel || 'default'
+        voiceId: voiceModel || 'default',
+        hasTransition: !!transitions.preText,  // Indicador para UI
+        hasComment: !!transitions.postText     // Indicador para UI
       }
 
       // Generar audio de noticia si se solicita
@@ -665,6 +729,7 @@ export async function POST(request: NextRequest) {
             .eq('id', currentAd.id)
         }
       }
+
       // Cortinas ahora manejadas por el plan del Director
     }
 
