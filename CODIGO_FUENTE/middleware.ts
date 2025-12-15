@@ -33,7 +33,26 @@ export async function middleware(request: NextRequest) {
     )
 
     // Obtener usuario actual (solo para rutas de páginas, no API)
-    const { data: { user } } = await supabase.auth.getUser()
+    // ✅ MEJORA: Manejar errores de token expirado sin desloguear
+    let user = null
+    try {
+        const { data, error } = await supabase.auth.getUser()
+        if (error) {
+            // Si es error de token, intentar continuar sin desloguear inmediatamente
+            if (error.name === 'AuthApiError' &&
+                (error.message?.includes('refresh_token') ||
+                    error.message?.includes('Invalid Refresh Token'))) {
+                console.warn('[Middleware] Token refresh error, allowing page load:', error.message)
+                // No asignar user, dejará null y puede redirigir a login si es ruta protegida
+            } else {
+                console.warn('[Middleware] Auth error:', error.message)
+            }
+        } else {
+            user = data.user
+        }
+    } catch (e) {
+        console.warn('[Middleware] Error getting user:', e)
+    }
 
     // Rutas protegidas que requieren autenticación
     const protectedRoutes = [

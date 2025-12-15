@@ -95,8 +95,13 @@ async function parseWithJSDOM(
     sourceUrl?: string,
     dbSelectores?: { contenido?: string[], eliminar?: string[] }
 ): Promise<{ contenido: string, resumen: string, imagen: string }> {
-    const { JSDOM } = await import('jsdom')
-    const dom = new JSDOM(html)
+    const { JSDOM, VirtualConsole } = await import('jsdom')
+
+    // ✅ Crear consola virtual que silencia errores de CSS
+    const virtualConsole = new VirtualConsole()
+    virtualConsole.on('error', () => { /* Silenciar errores de CSS parsing */ })
+
+    const dom = new JSDOM(html, { virtualConsole })
     const doc = dom.window.document
 
     // 1. Eliminar elementos no deseados
@@ -376,7 +381,7 @@ async function scrapeFullArticle(noticia: NoticiaParaScrape, region: string): Pr
     }
 }
 
-// Limpia texto scrapeado
+// Limpia texto scrapeado - INCLUYE FILTROS BIOBIOCHILE
 function cleanText(text: string): string {
     if (!text) return ''
 
@@ -392,10 +397,76 @@ function cleanText(text: string): string {
         .replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>')
         .replace(/&quot;/g, '"')
+
+        // ==========================================
+        // FILTROS ESPECÍFICOS PARA BIOBIOCHILE
+        // ==========================================
+        // Formulario de corrección/contacto - MEJORADO para todas las variantes
+        .replace(/Nombre y Apellido.*?Comentario/gis, '')
+        .replace(/Certifico que es información real.*?(BioBío|Bio Bio|BioBioChile)/gis, '')
+        .replace(/Certifico que es información real y autorizo a Bio Bio para publicarla.*?conveniente/gis, '')
+        .replace(/Correo electrónico.*?Teléfono/gis, '')
+        .replace(/Ciudad o localización/gi, '')
+        .replace(/Contacto Corrección o Comentario/gi, '')
+        .replace(/Por favor complete todos los campos/gi, '')
+        .replace(/haga check para certificar/gi, '')
+        .replace(/veracidad de los datos/gi, '')
+        .replace(/antes de enviar la corrección/gi, '')
+        .replace(/Por favor ingrese.*?e-mail valido/gi, '')
+        .replace(/Su mensaje fue enviado.*?exitosamente/gi, '')
+        .replace(/Atenderemos su corrección/gi, '')
+        .replace(/Atenderemos su correción/gi, '') // Con typo
+        .replace(/cuanto antes/gi, '')
+        .replace(/Enviando corrección.*?momento/gi, '')
+        .replace(/ENVIAR/g, '')
+        .replace(/manteniendo la confidencialidad de mis datos/gi, '')
+        .replace(/si asi lo deseo/gi, '')
+        .replace(/y la antes de enviar la correccion\.?!?/gi, '')
+        // ✅ NUEVO: Fragmentos adicionales que quedaban
+        .replace(/para publicarla de la forma\.?/gi, '')
+        .replace(/de la forma\. y la/gi, '')
+        .replace(/\.\.!/g, '.') // Limpiar puntuación rota
+        // ✅ NUEVO: Limpiar caracteres especiales × que aparecen
+        .replace(/[×]/g, '')
+        .replace(/Que estime conveniente,?\.?\s*/gi, '')
+        // ✅ NUEVO: Limpiar categorías con > al inicio
+        .replace(/^[A-Za-zÁÉÍÓÚáéíóúñÑ\s]+\s*>\s*/gm, '')
+        .replace(/Fútbol\s*>/gi, '')
+        .replace(/Inter\s*>/gi, '')
+        .replace(/Región de [A-Za-zÁÉÍÓÚáéíóúñÑ\s]+\s*>/gi, '')
+        .replace(/Noticia\s+(Lunes|Martes|Miércoles|Jueves|Viernes|Sábado|Domingo)/gi, '')
+        .replace(/Agencia de noticias\s+(Lunes|Martes|Miércoles|Jueves|Viernes|Sábado|Domingo)/gi, '')
+        .replace(/senadores electos diputados electos toda la cobertura/gi, '')
+        // Metadatos de autor y visitas
+        .replace(/por [A-Z][a-z]+ [A-Z][a-z]+ Periodista de Prensa en BioBioChile/gi, '')
+        .replace(/Periodista de Prensa en BioBioChile/gi, '')
+        .replace(/Por [A-Z][a-z]+ [A-Z][a-z]+\s+[A-Z][a-záéíóú]+\s+\d+\s+\w+,\s+\d{4}/gi, '')
+        .replace(/\d+[\.,]\d+ visitas/gi, '')
+        .replace(/VER RESUMEN/gi, '')
+        .replace(/Resumen generado con.*?Inteligencia Artificial.*?BioBioChile/gis, '')
+        .replace(/revisado por el autor de este artículo/gi, '')
+        .replace(/Archivo Agencia UNO/gi, '')
+        .replace(/Seguimos criterios de Ética y transparencia de BioBioChile/gi, '')
+        // Categorías de menú
+        .replace(/Artes y Cultura\s*>/gi, '')
+        .replace(/Nacional\s*>/gi, '')
+        .replace(/Internacional\s*>/gi, '')
+        .replace(/(Lunes|Martes|Miércoles|Jueves|Viernes|Sábado|Domingo)\s+\d+\s+(de\s+)?\w+,?\s+\d{4}/gi, '')
+        .replace(/Publicado a las \d{1,2}:\d{2}/gi, '')
+        // Fechas y timestamps
+        .replace(/\d{1,2}:\d{2}/g, '')
+
+        // ==========================================
+        // LIMPIEZA GENERAL
+        // ==========================================
         // Limpiar espacios
         .replace(/\s+/g, ' ')
         // Eliminar líneas vacías múltiples
         .replace(/\n\s*\n/g, '\n')
+        // Eliminar puntos múltiples
+        .replace(/\.{2,}/g, '.')
+        // Limpiar espacios antes de puntuación
+        .replace(/\s+([.,;:!?])/g, '$1')
         .trim()
 }
 

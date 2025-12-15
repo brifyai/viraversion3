@@ -26,7 +26,7 @@ export async function fetchWithRetry(
 ): Promise<Response> {
   const {
     retries = 3,
-    backoff = 1000,
+    backoff = 2000, // ✅ MEJORA: Aumentado de 1s a 2s para mejor manejo de 429
     onRetry
   } = retryOptions
 

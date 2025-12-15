@@ -187,7 +187,7 @@ Recuerda: SOLO usa información del texto original. NO inventes datos.`
 
         if (!response.ok) {
             console.warn(`⚠️ Error en Chutes AI: ${response.status}. Usando texto original limpio.`)
-            return fallbackHumanize(text, transitionPhrase)
+            return fallbackHumanize(text, transitionPhrase, targetWords)
         }
 
         const data = await response.json()
@@ -195,7 +195,16 @@ Recuerda: SOLO usa información del texto original. NO inventes datos.`
 
         if (!humanizedContent) {
             console.warn('⚠️ Respuesta vacía de Chutes AI. Usando fallback.')
-            return fallbackHumanize(text, transitionPhrase)
+            return fallbackHumanize(text, transitionPhrase, targetWords)
+        }
+
+        // ✅ NUEVO: Verificar que la IA generó suficiente contenido
+        const generatedWordCount = humanizedContent.split(' ').length
+        const minAcceptableWords = targetWords * 0.5  // Mínimo 50% del objetivo
+
+        if (generatedWordCount < minAcceptableWords) {
+            console.warn(`⚠️ IA generó solo ${generatedWordCount} palabras (mínimo: ${Math.round(minAcceptableWords)}). Usando fallback.`)
+            return fallbackHumanize(text, transitionPhrase, targetWords)
         }
 
         // Calcular tokens de salida
@@ -222,13 +231,14 @@ Recuerda: SOLO usa información del texto original. NO inventes datos.`
         console.error('Error en humanizeText:', error)
         // Fallback: limpiar texto básicamente
         const transitionPhrase = context ? getTransitionPhrase(context) : ''
-        return fallbackHumanize(text, transitionPhrase)
+        const targetWords = options?.targetWordCount || 150
+        return fallbackHumanize(text, transitionPhrase, targetWords)
     }
 }
 
-// Fallback cuando la IA no está disponible
-function fallbackHumanize(text: string, transitionPhrase: string = ''): HumanizeResult {
-    // Limpiar el texto básicamente
+// Fallback cuando la IA no está disponible - MEJORADO para respetar límite de palabras
+function fallbackHumanize(text: string, transitionPhrase: string = '', targetWordCount: number = 150): HumanizeResult {
+    // Limpiar el texto - FILTROS COMPLETOS para BioBioChile y otros
     let cleaned = text
         // Eliminar timestamps
         .replace(/^\d{1,2}:\d{2}\s*(hrs|horas|pm|am)?\s*[|•-]\s*/gi, '')
@@ -238,30 +248,118 @@ function fallbackHumanize(text: string, transitionPhrase: string = ''): Humanize
         .replace(/\s+\|\s+/g, '. ')
         // Eliminar URLs
         .replace(/https?:\/\/[^\s]+/g, '')
+
+        // ==========================================
+        // FILTROS ESPECÍFICOS PARA BIOBIOCHILE
+        // ==========================================
+        // Formulario de corrección/contacto - MEJORADO
+        .replace(/Nombre y Apellido.*?Comentario/gis, '')
+        .replace(/Certifico que es información real.*?(BioBío|Bio Bio|BioBioChile)/gis, '')
+        .replace(/Certifico que es información real y autorizo a Bio Bio para publicarla.*?conveniente/gis, '')
+        .replace(/Correo electrónico.*?Teléfono/gis, '')
+        .replace(/Ciudad o localización/gi, '')
+        .replace(/Contacto Corrección o Comentario/gi, '')
+        .replace(/Por favor complete todos los campos/gi, '')
+        .replace(/haga check para certificar/gi, '')
+        .replace(/veracidad de los datos/gi, '')
+        .replace(/antes de enviar la corrección/gi, '')
+        .replace(/Por favor ingrese.*?e-mail valido/gi, '')
+        .replace(/Su mensaje fue enviado.*?exitosamente/gi, '')
+        .replace(/Atenderemos su corrección/gi, '')
+        .replace(/Atenderemos su correción/gi, '') // Con typo
+        .replace(/cuanto antes/gi, '')
+        .replace(/Enviando corrección.*?momento/gi, '')
+        .replace(/ENVIAR/g, '')
+        .replace(/y la antes de enviar la correccion\.?!?/gi, '')
+        // ✅ NUEVO: Fragmentos adicionales
+        .replace(/para publicarla de la forma\.?/gi, '')
+        .replace(/de la forma\. y la/gi, '')
+        .replace(/\.\.!/g, '.')
+        .replace(/[×]/g, '')
+        .replace(/Que estime conveniente,?\.?\s*/gi, '')
+        // ✅ NUEVO: Categorías con >
+        .replace(/^[A-Za-zÁÉÍÓÚáéíóúñÑ\s]+\s*>\s*/gm, '')
+        .replace(/Fútbol\s*>/gi, '')
+        .replace(/Inter\s*>/gi, '')
+        .replace(/Región de [A-Za-zÁÉÍÓÚáéíóúñÑ\s]+\s*>/gi, '')
+        .replace(/senadores electos diputados electos toda la cobertura/gi, '')
+        // Metadatos de autor y visitas
+        .replace(/por [A-Z][a-z]+ [A-Z][a-z]+ Periodista de Prensa en BioBioChile/gi, '')
+        .replace(/Periodista de Prensa en BioBioChile/gi, '')
+        .replace(/Megam Ossandón/gi, '')
+        .replace(/\d+[\.,]\d+ visitas/gi, '')
+        .replace(/VER RESUMEN/gi, '')
+        .replace(/Resumen generado con.*?Inteligencia Artificial.*?BioBioChile/gis, '')
+        .replace(/revisado por el autor de este artículo/gi, '')
+        .replace(/Archivo Agencia UNO/gi, '')
+        .replace(/Seguimos criterios de Ética y transparencia de BioBioChile/gi, '')
+        .replace(/Capturas/gi, '')
+        // Fechas con formato de BioBio
+        .replace(/Noticia (Lunes|Martes|Miércoles|Jueves|Viernes|Sábado|Domingo) \d+ (de )?\w+ (de )?\d{4}/gi, '')
+        .replace(/Agencia de noticias\s+(Lunes|Martes|Miércoles|Jueves|Viernes|Sábado|Domingo)/gi, '')
+        .replace(/\d{1,2}:\d{2}/g, '')
+
+        // ==========================================
+        // LIMPIEZA GENERAL
+        // ==========================================
         // Eliminar múltiples espacios
         .replace(/\s+/g, ' ')
         // Eliminar caracteres especiales problemáticos para TTS
-        .replace(/[#@*_~`]/g, '')
+        .replace(/[#@*_~`×•]/g, '')
+        // Eliminar líneas vacías múltiples
+        .replace(/\n{2,}/g, '\n')
+        // Eliminar puntos múltiples
+        .replace(/\.{2,}/g, '.')
+        // Limpiar espacios antes de puntuación
+        .replace(/\s+([.,;:!?])/g, '$1')
         .trim()
 
+    // ✅ NUEVO: Recortar a las primeras N oraciones para respetar el objetivo de palabras
+    const sentences = cleaned.split(/(?<=[.!?])\s+/)
+    let result = ''
+    let wordCount = 0
+
+    for (const sentence of sentences) {
+        const sentenceWords = sentence.split(' ').length
+        if (wordCount + sentenceWords > targetWordCount * 1.2) {
+            // Si ya tenemos suficientes palabras, parar
+            if (wordCount >= targetWordCount * 0.5) break
+        }
+        result += (result ? ' ' : '') + sentence
+        wordCount += sentenceWords
+    }
+
+    // Si el resultado es muy corto, usar más del texto original
+    if (wordCount < 50 && cleaned.length > 0) {
+        const words = cleaned.split(' ').slice(0, targetWordCount)
+        result = words.join(' ')
+        // Asegurar que termina en una oración completa
+        const lastPeriod = result.lastIndexOf('.')
+        if (lastPeriod > result.length * 0.5) {
+            result = result.substring(0, lastPeriod + 1)
+        }
+    }
+
     // Agregar transición al inicio si existe
-    if (transitionPhrase && cleaned) {
-        cleaned = transitionPhrase + cleaned
+    if (transitionPhrase && result) {
+        result = transitionPhrase + result
     }
 
     // Asegurar que termine con punto
-    if (cleaned && !cleaned.endsWith('.') && !cleaned.endsWith('?') && !cleaned.endsWith('!')) {
-        cleaned += '.'
+    if (result && !result.endsWith('.') && !result.endsWith('?') && !result.endsWith('!')) {
+        result += '.'
     }
 
+    console.log(`   📋 Fallback: ${wordCount} palabras (objetivo: ${targetWordCount})`)
+
     return {
-        content: cleaned,
+        content: result,
         tokensUsed: 0,
         cost: 0
     }
 }
 
-// Función para limpiar texto para TTS (sin humanizar)
+// Función para limpiar texto para TTS (sin humanizar) - INCLUYE FILTROS BIOBIOCHILE
 export function sanitizeForTTS(text: string): string {
     if (!text) return ''
 
@@ -272,6 +370,31 @@ export function sanitizeForTTS(text: string): string {
         .replace(/^(URGENTE|AHORA|ÚLTIMO MINUTO)\s*[|•-]\s*/gi, '')
         // Reemplazar pipes
         .replace(/\s+\|\s+/g, '. ')
+
+        // FILTROS BIOBIOCHILE - MEJORADO
+        .replace(/Nombre y Apellido.*?Comentario/gis, '')
+        .replace(/Certifico que es información real.*?(BioBío|Bio Bio|BioBioChile)/gis, '')
+        .replace(/Certifico que es información real y autorizo a Bio Bio para publicarla.*?conveniente/gis, '')
+        .replace(/Correo electrónico.*?Teléfono/gis, '')
+        .replace(/Ciudad o localización/gi, '')
+        .replace(/Por favor complete todos los campos/gi, '')
+        .replace(/haga check para certificar/gi, '')
+        .replace(/veracidad de los datos/gi, '')
+        .replace(/antes de enviar la corrección/gi, '')
+        .replace(/Por favor ingrese.*?e-mail valido/gi, '')
+        .replace(/Su mensaje fue enviado.*?exitosamente/gi, '')
+        .replace(/Atenderemos su corrección/gi, '')
+        .replace(/Enviando corrección.*?momento/gi, '')
+        .replace(/ENVIAR/g, '')
+        .replace(/[×]/g, '')
+        .replace(/Que estime conveniente,?\.?\s*/gi, '')
+        .replace(/Periodista de Prensa en BioBioChile/gi, '')
+        .replace(/\d+[\.,]\d+ visitas/gi, '')
+        .replace(/VER RESUMEN/gi, '')
+        .replace(/Resumen generado con.*?Inteligencia Artificial.*?BioBioChile/gis, '')
+        .replace(/revisado por el autor de este artículo/gi, '')
+        .replace(/Seguimos criterios de Ética y transparencia de BioBioChile/gi, '')
+
         // Limpiar espacios
         .replace(/\s+/g, ' ')
         .trim()

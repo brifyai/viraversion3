@@ -32,6 +32,25 @@ export async function createSupabaseServer() {
 }
 
 /**
+ * 🖥️ Cliente SERVER READONLY - Para operaciones largas
+ * NO intenta refrescar tokens, evitando el error "Already Used"
+ */
+export async function createSupabaseServerReadOnly() {
+    const cookieStore = await cookies()
+    return createServerClient(supabaseUrl, supabaseAnonKey, {
+        cookies: {
+            getAll: () => cookieStore.getAll(),
+            // No setear cookies = no refresh de tokens
+            setAll: () => { }
+        },
+        auth: {
+            autoRefreshToken: false,
+            persistSession: false
+        }
+    })
+}
+
+/**
  * 🔴 Cliente ADMIN - Bypassa RLS, SOLO para backend
  * NUNCA importar en componentes del cliente
  */
@@ -44,11 +63,13 @@ export const supabaseAdmin = createClient(
 /**
  * 🔐 Obtener sesión del usuario para API Routes
  * Retorna un objeto compatible con el formato de NextAuth para facilitar migración
+ * ✅ MEJORA: Usa cliente read-only para evitar "Already Used" en operaciones largas
  */
 export async function getSupabaseSession() {
     console.log('🔐 [getSupabaseSession] Starting session check...')
 
-    const supabase = await createSupabaseServer()
+    // ✅ Usar cliente read-only para no refrescar tokens durante operaciones largas
+    const supabase = await createSupabaseServerReadOnly()
     const { data: { user }, error } = await supabase.auth.getUser()
 
     console.log('🔐 [getSupabaseSession] Auth result:', {

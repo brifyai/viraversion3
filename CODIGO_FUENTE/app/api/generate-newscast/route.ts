@@ -7,7 +7,8 @@ import { getWeather } from '@/lib/weather'
 import { fetchWithRetry } from '@/lib/utils'
 import { CHUTES_CONFIG, getChutesHeaders } from '@/lib/chutes-config'
 import { applyIntelligentAudioPlacement, TimelineItem } from '@/lib/audio-placement'
-import { humanizeText, TransitionContext } from '@/lib/humanize-text'
+import { humanizeText, TransitionContext, sanitizeForTTS } from '@/lib/humanize-text'
+import { planificarNoticiero, calcularImportancia, PlanNoticiero } from '@/lib/director-ai'
 
 // Cliente Supabase
 const supabase = supabaseAdmin
@@ -63,20 +64,8 @@ async function getNewsFromDB(region: string, limit: number = 20, maxHoursOld: nu
 }
 
 
-// Función para limpiar texto RAW antes de humanizar (evita errores CUDA)
-function sanitizeTextForTTS(text: string): string {
-  if (!text) return '';
-  // 1. Eliminar timestamps al inicio (ej: "08:10 | ", "12:30 hrs |")
-  let clean = text.replace(/^\d{1,2}:\d{2}\s*(hrs|horas|pm|am)?\s*[|•-]\s*/i, '');
-  // 2. Eliminar prefijos comunes
-  clean = clean.replace(/^(URGENTE|AHORA|ÚLTIMO MINUTO)\s*[|•-]\s*/i, '');
-  // 3. Reemplazar pipes por puntos
-  clean = clean.replace(/\s+\|\s+/g, '. ');
-  return clean;
-}
-
 // Contexto para transiciones naturales entre noticias
-// humanizeText ahora se importa desde @/lib/humanize-text
+// sanitizeForTTS y humanizeText se importan desde @/lib/humanize-text
 
 // Función para generar audio con TTS
 async function generateAudio(text: string, voice?: string): Promise<{ audioUrl: string; duration: number; s3Key: string } | null> {
@@ -373,31 +362,53 @@ export async function POST(request: NextRequest) {
     console.log(`📢 ${campaigns?.length || 0} campañas publicitarias activas (orden aleatorio)`)
 
     // 5. Procesar noticias (Humanizar) y armar Timeline
-    const timeline = []
+    const timeline: any[] = []
     let currentDuration = 0
     let totalCost = 0
     let totalTokens = 0
     let adRotationIndex = 0 // Índice para rotar publicidades (sobre array mezclado)
 
-    // 📏 CÁLCULO DINÁMICO DE PALABRAS POR NOTICIA
-    // Basado en la duración objetivo y cantidad de noticias seleccionadas
-    const introOutroDuration = 30 // 15s intro + 15s outro
-    const adsDuration = (adCount || 0) * 25 // ~25s por anuncio (ajustado)
-    const availableNewsTime = targetDuration - introOutroDuration - adsDuration
-    const timePerNews = availableNewsTime / Math.max(1, selectedNews.length)
+    // 🎬 IA DIRECTORA: Planificar estructura del noticiero
+    const directorInput = {
+      noticias: selectedNews.map(n => ({
+        id: n.id,
+        titulo: n.titulo,
+        categoria: n.categoria || 'general',
+        longitud_contenido: (n.contenido || n.resumen || '').length,
+        importancia: calcularImportancia(n.titulo, n.categoria || 'general')
+      })),
+      duracion_objetivo_segundos: targetDuration,
+      publicidades: campaigns.map((c: any) => ({
+        id: c.id,
+        nombre: c.nombre,
+        duracion_segundos: 25
+      })),
+      cortinas_enabled: audioConfig?.cortinas_enabled || false,
+      wpm: effectiveWPM
+    }
 
-    // ✅ MEJORADO: Permitir más palabras cuando hay pocas noticias
-    // Con pocas noticias, cada una puede ser más extensa para llenar el tiempo
-    const maxWordsAllowed = selectedNews.length <= 5 ? 600 :
-      selectedNews.length <= 10 ? 400 : 300
-    const targetWordsPerNews = Math.max(80, Math.min(maxWordsAllowed, Math.round((timePerNews / 60) * effectiveWPM)))
+    const plan: PlanNoticiero = await planificarNoticiero(directorInput, userId)
 
-    console.log(`📏 === CONTROL DE DURACIÓN ===`)
+    // Reordenar noticias según el plan de la IA
+    const noticiasOrdenadas = plan.noticias
+      .sort((a, b) => a.orden - b.orden)
+      .map(planItem => {
+        const noticia = selectedNews.find(n => n.id === planItem.id)
+        return {
+          ...noticia,
+          palabras_objetivo: planItem.palabras_objetivo,
+          segundos_asignados: planItem.segundos_asignados,
+          es_destacada: planItem.es_destacada
+        }
+      })
+      .filter(n => n && n.id)
+
+    console.log(`📏 === PLAN DEL DIRECTOR ===`)
     console.log(`   🎯 Duración objetivo: ${targetDuration}s (${Math.round(targetDuration / 60)} min)`)
-    console.log(`   📰 Noticias: ${selectedNews.length}`)
-    console.log(`   ⏱️ Tiempo disponible para noticias: ${Math.round(availableNewsTime)}s`)
-    console.log(`   📝 Palabras objetivo por noticia: ~${targetWordsPerNews} palabras`)
-    console.log(`   🗣️ WPM de la voz: ${effectiveWPM}`)
+    console.log(`   📰 Noticias ordenadas: ${noticiasOrdenadas.length}`)
+    console.log(`   🎵 Cortinas: ${plan.inserciones.filter(i => i.tipo === 'cortina').length}`)
+    console.log(`   📢 Publicidades: ${plan.inserciones.filter(i => i.tipo === 'publicidad').length}`)
+    console.log(`   ⏱️ Duración estimada: ${plan.duracion_total_estimada}s`)
     console.log(`   =============================`)
 
     // A. Intro simple
@@ -497,39 +508,67 @@ export async function POST(request: NextRequest) {
     timeline.push(introItem)
     currentDuration += introItem.duration
 
-    // B. Noticias con publicidad intercalada
-    for (let i = 0; i < selectedNews.length; i++) {
-      const news = selectedNews[i]
+    // ✅ MEJORA: Filtrar noticias con contenido muy corto
+    const MIN_CONTENT_LENGTH = 400
+    const noticiasValidas = noticiasOrdenadas.filter((n: any) => {
+      const contentLength = (n.contenido || n.resumen || '').length
+      if (contentLength < MIN_CONTENT_LENGTH) {
+        console.log(`⚠️ Noticia excluida (muy corta: ${contentLength} chars): ${n.titulo?.substring(0, 50)}...`)
+        return false
+      }
+      return true
+    })
+
+    if (noticiasValidas.length < noticiasOrdenadas.length) {
+      console.log(`📋 Filtradas ${noticiasOrdenadas.length - noticiasValidas.length} noticias por contenido insuficiente`)
+    }
+
+    // ✅ MEJORA: Recalcular palabras objetivo si se filtraron noticias
+    const palabrasExtra = noticiasValidas.length < noticiasOrdenadas.length
+      ? Math.round((targetDuration - currentDuration) / 60 * effectiveWPM / noticiasValidas.length)
+      : 0
+
+    // ✅ MEJORA: Variables para compensación dinámica
+    let deficitAcumulado = 0
+
+    // B. Noticias con publicidad/cortinas intercaladas según plan del Director
+    for (let i = 0; i < noticiasValidas.length; i++) {
+      const news = noticiasValidas[i] as any
 
       if (currentDuration >= targetDuration) break
 
+      // ✅ MEJORA: Agregar déficit acumulado a esta noticia
+      const palabrasConCompensacion = (news.palabras_objetivo || 200) + Math.round(deficitAcumulado / 60 * effectiveWPM)
 
+      console.log(`🧠 Procesando noticia ${i + 1}/${noticiasValidas.length}: ${news.titulo}`)
+      console.log(`   📝 Palabras objetivo: ${palabrasConCompensacion}${deficitAcumulado > 0 ? ` (+${Math.round(deficitAcumulado)}s compensación)` : ''}`)
 
-      console.log(`🧠 Procesando noticia ${i + 1}/${selectedNews.length}: ${news.titulo}`)
       // CRITICAL: Sanitize text BEFORE humanization to prevent CUDA errors with raw metadata
       const rawContent = news.contenido || news.resumen || '';
-      const sanitizedContent = sanitizeTextForTTS(rawContent);
+      const sanitizedContent = sanitizeForTTS(rawContent);
 
       // Contexto para transiciones naturales
-      const previousCategory = i > 0 ? selectedNews[i - 1].categoria : null
+      const previousCategory = i > 0 ? (noticiasValidas[i - 1] as any).categoria : null
       const transitionContext: TransitionContext = {
         index: i,
-        total: selectedNews.length,
+        total: noticiasValidas.length,
         category: news.categoria || 'general',
         previousCategory
       }
 
-      // Pasar objetivo de palabras para control de duración
+      // Pasar objetivo de palabras con compensación
       const humanizedResult = await humanizeText(
         sanitizedContent,
         region,
         userId,
         transitionContext,
-        { targetWordCount: targetWordsPerNews }  // NUEVO: control de duración
+        { targetWordCount: palabrasConCompensacion }
       )
 
-      // ✅ NUEVO: Pequeño delay para evitar rate limiting de Chutes AI
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // ✅ MEJORA: Delay aumentado a 2.5s + backoff progresivo para evitar rate limiting (429)
+      const baseDelay = 2500
+      const progressiveDelay = baseDelay + (i * 300) // Cada noticia espera 300ms más
+      await new Promise(resolve => setTimeout(resolve, progressiveDelay))
 
       // Actualizar contadores de tokens y costos
       totalTokens += humanizedResult.tokensUsed
@@ -538,6 +577,17 @@ export async function POST(request: NextRequest) {
       // Estimar duración usando el WPM real de la voz seleccionada
       const wordCount = humanizedResult.content.split(' ').length
       const estimatedDuration = Math.ceil((wordCount / effectiveWPM) * 60)
+
+      // ✅ MEJORA: Calcular déficit para compensar en siguiente noticia
+      const duracionObjetivo = news.segundos_asignados || Math.round(palabrasConCompensacion / effectiveWPM * 60)
+      if (estimatedDuration < duracionObjetivo * 0.8) {
+        deficitAcumulado += (duracionObjetivo - estimatedDuration)
+        console.log(`   ⚠️ Déficit: ${Math.round(duracionObjetivo - estimatedDuration)}s → Compensando en siguiente`)
+      } else {
+        deficitAcumulado = 0 // Resetear si esta noticia cumplió
+      }
+
+      console.log(`   📊 Palabras generadas: ${wordCount} | Duración: ${Math.round(estimatedDuration)}s`)
 
       const newsItem: any = {
         id: news.id,
@@ -567,86 +617,52 @@ export async function POST(request: NextRequest) {
       timeline.push(newsItem)
       currentDuration += newsItem.duration
 
-      // Insertar publicidad
-      let shouldInsertAd = false
+      // 🎬 Insertar cortina/publicidad según plan del Director
+      const ordenActual = i + 1
+      const insercionesAqui = plan.inserciones.filter(ins => ins.despues_de_orden === ordenActual)
 
-      if (typeof adCount === 'number' && adCount > 0) {
-        // Lógica basada en cantidad total (distribución equitativa)
-        // Calcular índices de inserción: k * (total / (ads + 1))
-        const step = selectedNews.length / (adCount + 1)
-        // Verificar si el índice actual (i + 1) corresponde a un punto de inserción
-        // Usamos una tolerancia pequeña para manejar redondeos si fuera necesario, 
-        // pero mejor pre-calculamos o verificamos si "toca" aquí.
-        // Estrategia: Verificar si Math.floor(k * step) === i + 1 para algún k
+      for (const insercion of insercionesAqui) {
+        if (insercion.tipo === 'cortina') {
+          console.log(`🎵 Insertando cortina después de noticia ${ordenActual}`)
+          timeline.push({
+            id: `cortina-${ordenActual}`,
+            type: 'cortina',
+            title: 'Cortina musical',
+            content: '',
+            duration: insercion.duracion_segundos || 5
+          })
+          currentDuration += insercion.duracion_segundos || 5
+        } else if (insercion.tipo === 'publicidad' && campaigns && campaigns.length > 0) {
+          // Buscar la publicidad específica o usar rotación
+          let currentAd = campaigns.find((c: any) => c.id === insercion.publicidad_id)
+          if (!currentAd) {
+            currentAd = campaigns[adRotationIndex % campaigns.length]
+            adRotationIndex++
+          }
 
-        // Optimización: Calcular si este índice es uno de los puntos
-        // i va de 0 a length-1. i+1 es la posición 1-based.
-        // Queremos insertar DESPUÉS de la noticia i+1.
-
-        // Enfoque inverso: ¿Cuántos anuncios deberíamos llevar insertados hasta ahora?
-        const targetAdsSoFar = Math.floor((i + 1) / step)
-        const adsInsertedSoFar = timeline.filter(t => t.type === 'advertisement').length
-
-        if (adsInsertedSoFar < targetAdsSoFar && adsInsertedSoFar < adCount) {
-          shouldInsertAd = true
-        }
-
-      } else {
-        // Fallback: Lógica antigua por frecuencia
-        if ((i + 1) % frecuencia_anuncios === 0) {
-          shouldInsertAd = true
-        }
-      }
-
-      if (shouldInsertAd && campaigns && campaigns.length > 0) {
-        // Usar rotación en vez de random para alternar publicidades
-        const currentAd = campaigns[adRotationIndex % campaigns.length]
-        adRotationIndex++ // Incrementar para la siguiente publicidad
-
-        console.log(`📢 Insertando publicidad (${timeline.filter(t => t.type === 'advertisement').length + 1}/${adCount}): ${currentAd.nombre}`)
-
-        timeline.push({
-          id: `ad-${i}`,
-          type: 'advertisement',
-          title: currentAd.nombre,
-          content: currentAd.descripcion || '',
-          audioUrl: currentAd.url_audio,
-          s3Key: currentAd.s3_key,
-          duration: currentAd.duracion_segundos || 30,
-          adCampaignId: currentAd.id
-        })
-
-        currentDuration += currentAd.duracion_segundos || 30
-
-        // Actualizar contador de reproducciones
-        await supabase
-          .from('campanas_publicitarias')
-          .update({ reproducciones: (currentAd.reproducciones || 0) + 1 })
-          .eq('id', currentAd.id)
-      }
-
-      // Insertar cortina automáticamente si está habilitado
-      if (audioConfig.cortinas_enabled && audioConfig.cortina_default_url) {
-        const cortinasInserted = timeline.filter(t => t.type === 'cortina').length
-        const shouldInsertCortina = (i + 1) % (audioConfig.cortinas_frequency || 3) === 0
-
-        if (shouldInsertCortina) {
-          console.log(`🎵 Insertando cortina automática después de noticia ${i + 1}`)
+          console.log(`📢 Insertando publicidad (${timeline.filter(t => t.type === 'advertisement').length + 1}/${adCount}): ${currentAd.nombre}`)
 
           timeline.push({
-            id: `cortina-${i}`,
-            type: 'cortina',
-            title: 'Cortina',
-            content: 'Cortina de radio',
-            audioUrl: audioConfig.cortina_default_url,
-            duration: 5, // Duración típica de cortina
-            insertedBy: 'ai',
-            audioLibraryId: audioConfig.cortina_default_id
+            id: `ad-${ordenActual}`,
+            type: 'advertisement',
+            title: currentAd.nombre,
+            content: currentAd.descripcion || '',
+            audioUrl: currentAd.url_audio,
+            s3Key: currentAd.s3_key,
+            duration: currentAd.duracion_segundos || 25,
+            adCampaignId: currentAd.id
           })
 
-          currentDuration += 5
+          currentDuration += currentAd.duracion_segundos || 25
+
+          // Actualizar contador de reproducciones
+          await supabase
+            .from('campanas_publicitarias')
+            .update({ reproducciones: (currentAd.reproducciones || 0) + 1 })
+            .eq('id', currentAd.id)
         }
       }
+      // Cortinas ahora manejadas por el plan del Director
     }
 
     // C.1 Aplicar colocación inteligente de audio (si está habilitado)
@@ -698,8 +714,61 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // C. Outro
-    const outroText = `Estas fueron las noticias en Radio ${region}. Siga en nuestra sintonía.`
+    // C. Outro - ✅ MEJORA: Cierre extendido si falta tiempo
+    const tiempoActual = timeline.reduce((sum, item) => sum + (item.duration || 0), 0)
+    const tiempoFaltante = targetDuration - tiempoActual - 15 // 15s para outro normal
+
+    let outroText = ''
+
+    if (tiempoFaltante > 30) {
+      // ✅ Generar cierre extendido para compensar tiempo faltante
+      const palabrasCierre = Math.round((tiempoFaltante / 60) * effectiveWPM)
+      console.log(`⏱️ Tiempo faltante: ${Math.round(tiempoFaltante)}s → Generando cierre extendido (${palabrasCierre} palabras)`)
+
+      // Obtener resumen de las noticias del día
+      const titulares = noticiasValidas.slice(0, 5).map((n: any) => n.titulo).join(', ')
+
+      const cierreExtendido = `
+        Y así llegamos al cierre de nuestro informativo. 
+        Hoy les trajimos las noticias más relevantes de ${region}, incluyendo ${titulares}.
+        Recuerde mantenerse informado con nuestra programación habitual.
+        El tiempo para hoy se presenta ${['despejado', 'nublado', 'con posibles lluvias', 'agradable'][Math.floor(Math.random() * 4)]}.
+        Gracias por acompañarnos en Radio ${region}.
+        Estas fueron las noticias. Siga en nuestra sintonía.
+      `.replace(/\s+/g, ' ').trim()
+
+      outroText = cierreExtendido
+
+      // Agregar segmento de cierre extendido antes del outro
+      const cierreItem: any = {
+        id: 'cierre-extendido',
+        type: 'closing',
+        title: 'Cierre Extendido',
+        content: cierreExtendido,
+        duration: Math.round(tiempoFaltante * 0.8), // 80% del tiempo faltante
+        isHumanized: true,
+        voiceId: voiceModel || 'default'
+      }
+
+      if (generateAudioNow) {
+        console.log('🎤 Generando audio de cierre extendido...')
+        const cierreAudio = await generateAudio(cierreExtendido, voiceModel)
+        if (cierreAudio) {
+          cierreItem.audioUrl = cierreAudio.audioUrl
+          cierreItem.s3Key = cierreAudio.s3Key
+          cierreItem.duration = cierreAudio.duration
+        }
+      }
+
+      timeline.push(cierreItem)
+      currentDuration += cierreItem.duration
+
+      // Outro corto después del cierre extendido
+      outroText = `Siga en nuestra sintonía. Hasta la próxima.`
+    } else {
+      // Outro normal
+      outroText = `Estas fueron las noticias en Radio ${region}. Siga en nuestra sintonía.`
+    }
 
     const outroItem: any = {
       id: 'outro',
