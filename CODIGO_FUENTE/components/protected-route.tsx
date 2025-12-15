@@ -175,13 +175,13 @@ export function usePermissions() {
   }
 
   const isAdmin = userRole === 'admin'
-  const isOperator = userRole === 'operator'
+  const isSuperAdmin = userRole === 'super_admin'
   const isUser = userRole === 'user'
 
   return {
     userRole,
     isAdmin,
-    isOperator,
+    isSuperAdmin,
     isUser,
     checkPermission,
     checkAnyPermission,

@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect, createContext, useContext, useMemo, useRef } from 'react'
+import { useState, useEffect, createContext, useContext, useMemo } from 'react'
 import { createSupabaseBrowser } from '@/lib/supabase'
 import type { User } from '@supabase/supabase-js'
 
 interface UserData {
     id: string
     email: string
-    role: 'super_admin' | 'admin' | 'operator' | 'user'
+    role: 'super_admin' | 'admin' | 'user'
     nombre_completo?: string
 }
 
@@ -29,100 +29,174 @@ export function SupabaseUserProvider({ children }: { children: React.ReactNode }
     const [user, setUser] = useState<User | null>(null)
     const [userData, setUserData] = useState<UserData | null>(null)
     const [isLoading, setIsLoading] = useState(true)
-    const initializedRef = useRef(false)
 
-    // Memoize Supabase client to prevent recreation on each render
+    // Crear cliente Supabase una vez
     const supabase = useMemo(() => createSupabaseBrowser(), [])
 
     useEffect(() => {
-        // Guard against duplicate initialization (React StrictMode double-mount)
-        if (initializedRef.current) return
-        initializedRef.current = true
+        let isMounted = true
 
-        // Obtener sesión inicial
-        const getUser = async () => {
+        // Función para cargar datos del usuario desde la tabla users con timeout
+        const loadUserData = async (authUser: User): Promise<UserData | null> => {
             try {
-                const { data: { user } } = await supabase.auth.getUser()
-                setUser(user)
+                console.log('[useSupabaseUser] Loading user data for:', authUser.email)
 
-                if (user) {
-                    // Intentar obtener datos de la tabla users
-                    // Nota: Buscamos por email porque la tabla users tiene su propio UUID
-                    // Solo seleccionamos columnas que existen en la DB
-                    const { data: userData, error } = await supabase
-                        .from('users')
-                        .select('id, email, role, nombre_completo')
-                        .eq('email', user.email)
-                        .single()
+                // Crear una promesa con timeout
+                const timeoutPromise = new Promise<never>((_, reject) => {
+                    setTimeout(() => reject(new Error('Query timeout after 5s')), 5000)
+                })
 
-                    if (userData && !error) {
-                        setUserData(userData as UserData)
-                    } else {
-                        // Fallback: usar metadata del usuario de Supabase Auth
-                        console.warn('[useSupabaseUser] Error fetching user data from users table:', error?.message)
-                        console.log('[useSupabaseUser] Using user_metadata fallback')
-                        const metadata = user.user_metadata
-                        setUserData({
-                            id: user.id,
-                            email: user.email || '',
-                            role: (metadata?.role as 'super_admin' | 'admin' | 'operator' | 'user') || 'user',
-                            nombre_completo: metadata?.full_name || user.email
-                        })
+                const queryPromise = supabase
+                    .from('users')
+                    .select('id, email, role, nombre_completo')
+                    .eq('email', authUser.email)
+                    .single()
+
+                console.log('[useSupabaseUser] Query started...')
+                const { data: dbUser, error } = await Promise.race([queryPromise, timeoutPromise]) as Awaited<typeof queryPromise>
+                console.log('[useSupabaseUser] Query completed:', { dbUser, error: error?.message })
+
+                if (dbUser && !error) {
+                    console.log('[useSupabaseUser] User data loaded:', dbUser)
+                    return dbUser as UserData
+                } else {
+                    // Fallback: usar metadata del usuario de Supabase Auth
+                    console.warn('[useSupabaseUser] Error fetching user data:', error?.message)
+                    const metadata = authUser.user_metadata
+                    console.log('[useSupabaseUser] Using fallback from metadata:', metadata)
+                    return {
+                        id: authUser.id,
+                        email: authUser.email || '',
+                        role: (metadata?.role as 'super_admin' | 'admin' | 'user') || 'user',
+                        nombre_completo: metadata?.full_name || authUser.email
                     }
                 }
             } catch (error) {
-                console.error('[useSupabaseUser] Error in getUser:', error)
-            } finally {
-                setIsLoading(false)
+                console.error('[useSupabaseUser] Error loading user data:', error)
+                // En caso de timeout o error, usar fallback
+                const metadata = authUser.user_metadata
+                return {
+                    id: authUser.id,
+                    email: authUser.email || '',
+                    role: (metadata?.role as 'super_admin' | 'admin' | 'user') || 'user',
+                    nombre_completo: metadata?.full_name || authUser.email
+                }
             }
         }
 
-        getUser()
+        // Obtener sesión inicial
+        const initializeAuth = async () => {
+            try {
+                console.log('[useSupabaseUser] Initializing auth...')
+                const { data: { user: authUser }, error } = await supabase.auth.getUser()
+
+                if (!isMounted) return
+
+                if (error) {
+                    console.warn('[useSupabaseUser] Initial auth error:', error.message)
+                    setUser(null)
+                    setUserData(null)
+                } else if (authUser) {
+                    console.log('[useSupabaseUser] Auth user found:', authUser.email)
+                    setUser(authUser)
+                    const data = await loadUserData(authUser)
+                    if (isMounted) {
+                        setUserData(data)
+                    }
+                } else {
+                    console.log('[useSupabaseUser] No auth user found')
+                    setUser(null)
+                    setUserData(null)
+                }
+            } catch (error) {
+                console.error('[useSupabaseUser] Error in initializeAuth:', error)
+                if (isMounted) {
+                    setUser(null)
+                    setUserData(null)
+                }
+            } finally {
+                if (isMounted) {
+                    setIsLoading(false)
+                }
+            }
+        }
+
+        initializeAuth()
 
         // Escuchar cambios de autenticación
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
-            async (_event, session) => {
-                setUser(session?.user ?? null)
+            async (event, session) => {
+                console.log('[useSupabaseUser] Auth state changed:', event)
 
-                if (session?.user) {
-                    // Nota: Buscamos por email porque la tabla users tiene su propio UUID
-                    // Solo seleccionamos columnas que existen en la DB
-                    const { data: userData, error } = await supabase
-                        .from('users')
-                        .select('id, email, role, nombre_completo')
-                        .eq('email', session.user.email)
-                        .single()
+                if (!isMounted) return
 
-                    if (userData && !error) {
-                        setUserData(userData as UserData)
-                    } else {
-                        // Fallback: usar metadata del usuario
-                        const metadata = session.user.user_metadata
-                        setUserData({
-                            id: session.user.id,
-                            email: session.user.email || '',
-                            role: (metadata?.role as 'super_admin' | 'admin' | 'operator' | 'user') || 'user',
-                            nombre_completo: metadata?.full_name || session.user.email
-                        })
+                // Solo recargar datos en estos eventos específicos
+                if (event === 'SIGNED_OUT') {
+                    setUser(null)
+                    setUserData(null)
+                    setIsLoading(false)
+                    return
+                }
+
+                // Ignorar TOKEN_REFRESHED - ya tenemos los datos del usuario
+                if (event === 'TOKEN_REFRESHED') {
+                    console.log('[useSupabaseUser] Token refreshed, skipping user data reload')
+                    // Solo actualizar el user object si cambió
+                    if (session?.user) {
+                        setUser(session.user)
                     }
-                } else {
+                    return
+                }
+
+                // Para SIGNED_IN o INITIAL_SESSION, cargar datos completos
+                if (session?.user && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+                    setUser(session.user)
+                    const data = await loadUserData(session.user)
+                    if (isMounted) {
+                        setUserData(data)
+                    }
+                } else if (!session?.user) {
+                    setUser(null)
                     setUserData(null)
                 }
 
-                setIsLoading(false)
+                if (isMounted) {
+                    setIsLoading(false)
+                }
             }
         )
 
         return () => {
+            isMounted = false
             subscription.unsubscribe()
         }
-    }, [])
+    }, [supabase])
 
     const handleSignOut = async () => {
-        await supabase.auth.signOut()
-        setUser(null)
-        setUserData(null)
-        window.location.href = '/auth/signin'
+        try {
+            console.log('[useSupabaseUser] Signing out...')
+            setIsLoading(true)
+
+            // Cerrar sesión en Supabase primero
+            const { error } = await supabase.auth.signOut()
+            if (error) {
+                console.error('[useSupabaseUser] SignOut error:', error)
+            }
+
+            // Limpiar estado local
+            setUser(null)
+            setUserData(null)
+
+            // Pequeña demora para asegurar que cookies se limpien
+            await new Promise(resolve => setTimeout(resolve, 100))
+
+            // Redirigir a login
+            window.location.href = '/auth/signin'
+        } catch (error) {
+            console.error('[useSupabaseUser] SignOut error:', error)
+            // Forzar redirección aunque haya error
+            window.location.href = '/auth/signin'
+        }
     }
 
     return (

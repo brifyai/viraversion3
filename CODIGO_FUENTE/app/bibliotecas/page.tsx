@@ -67,7 +67,7 @@ export default function BibliotecasPage() {
   const [isPlaying, setIsPlaying] = useState(false)
 
   // Estado para permisos de usuario
-  const [userRole, setUserRole] = useState<'admin' | 'operator' | 'user'>('user')
+  const [userRole, setUserRole] = useState<'admin' | 'user'>('user')
   const [canUploadGlobal, setCanUploadGlobal] = useState(false)
   const [isCreateCampaignOpen, setIsCreateCampaignOpen] = useState(false)
   const [isUploadAudioOpen, setIsUploadAudioOpen] = useState(false)
@@ -103,7 +103,7 @@ export default function BibliotecasPage() {
         }
 
         // Establecer rol y permisos
-        const role = (storedRole as 'admin' | 'operator' | 'user') || 'user'
+        const role = (storedRole as 'admin' | 'user') || 'user'
         setUserRole(role)
         setCanUploadGlobal(role === 'admin') // Solo admins pueden subir archivos globales
         setUserEmail(storedEmail || '')

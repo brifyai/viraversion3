@@ -21,14 +21,6 @@ const TEST_USERS = [
     plan: 'enterprise'
   },
   {
-    name: 'Operador VIRA',
-    email: 'operator@vira.cl',
-    password: 'operator123456',
-    role: 'operator',
-    company: 'VIRA',
-    plan: 'professional'
-  },
-  {
     name: 'Usuario VIRA',
     email: 'user@vira.cl',
     password: 'user123456',

@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Validar rol usando el nuevo sistema
-      if (!['admin', 'operator', 'user'].includes(role)) {
+      if (!['admin', 'user'].includes(role)) {
         return createErrorResponse('Rol inválido', 400)
       }
 

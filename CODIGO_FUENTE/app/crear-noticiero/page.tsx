@@ -101,6 +101,7 @@ export default function CrearNoticiero() {
   const [availableSources, setAvailableSources] = useState<{ id: string, nombre_fuente: string, url: string, region: string }[]>([])
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
   const [loadingSources, setLoadingSources] = useState(false)
+  const [showAllSources, setShowAllSources] = useState(false) // Para expandir/colapsar fuentes adicionales
 
   // Cargar fuentes disponibles al inicio
   useEffect(() => {
@@ -124,6 +125,29 @@ export default function CrearNoticiero() {
     }
     loadSources()
   }, [])
+
+  // ✅ AUTO-FILTRAR fuentes cuando cambia la región
+  useEffect(() => {
+    if (!selectedRegion || availableSources.length === 0) return
+
+    // Filtrar fuentes relevantes para la región seleccionada
+    const relevantSources = availableSources.filter(source => {
+      const sourceRegion = source.region?.toLowerCase() || 'nacional'
+      const targetRegion = selectedRegion.toLowerCase()
+
+      // Si la región es "Nacional", solo incluir fuentes nacionales
+      if (targetRegion === 'nacional') {
+        return sourceRegion === 'nacional'
+      }
+
+      // Para otras regiones: incluir fuentes de esa región + nacionales
+      return sourceRegion === targetRegion || sourceRegion === 'nacional'
+    })
+
+    setSelectedSourceIds(relevantSources.map(s => s.id))
+    setShowAllSources(false) // Colapsar al cambiar región
+    console.log(`🌍 Auto-seleccionadas ${relevantSources.length} fuentes para región: ${selectedRegion}`)
+  }, [selectedRegion, availableSources])
 
   // Hook de generación
   const {
@@ -223,6 +247,8 @@ export default function CrearNoticiero() {
 
     try {
       console.log('🔍 Iniciando escaneo de fuentes...')
+      console.log('📤 sourceIds a enviar:', selectedSourceIds)
+      console.log('📤 fuentes seleccionadas:', availableSources.filter(s => selectedSourceIds.includes(s.id)).map(s => s.nombre_fuente))
 
       const response = await fetch('/api/scraping/preview', {
         method: 'POST',
@@ -651,73 +677,79 @@ export default function CrearNoticiero() {
                 </p>
 
                 <div className="mb-6">
-                  <label className="text-sm font-medium mb-2 block">Selecciona las fuentes que deseas escanear:</label>
                   {loadingSources ? (
                     <div className="flex items-center gap-2 text-sm text-gray-500">
                       <Loader2 className="h-3 w-3 animate-spin" /> Cargando fuentes...
                     </div>
                   ) : availableSources.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      <div
-                        onClick={() => {
-                          if (selectedSourceIds.length === availableSources.length) {
-                            setSelectedSourceIds([])
-                          } else {
-                            setSelectedSourceIds(availableSources.map(s => s.id))
-                          }
-                        }}
-                        className={`
-                            cursor-pointer px-3 py-1 rounded-full text-xs font-bold border transition-colors
-                            ${selectedSourceIds.length === availableSources.length
-                            ? 'bg-gray-800 border-gray-800 text-white'
-                            : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}
-                          `}
-                      >
-                        {selectedSourceIds.length === availableSources.length ? 'Todas' : 'Seleccionar Todo'}
+                    <div className="space-y-3">
+                      {/* Resumen de fuentes seleccionadas */}
+                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                        <div className="flex items-center gap-2">
+                          <Newspaper className="h-4 w-4 text-blue-600" />
+                          <span className="text-sm font-medium">
+                            {selectedSourceIds.length} fuente{selectedSourceIds.length !== 1 ? 's' : ''} seleccionada{selectedSourceIds.length !== 1 ? 's' : ''}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            ({availableSources.filter(s => selectedSourceIds.includes(s.id)).map(s => s.nombre_fuente).join(', ')})
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowAllSources(!showAllSources)}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          {showAllSources ? 'Ocultar' : 'Modificar fuentes'}
+                        </button>
                       </div>
-                      {availableSources.map(source => {
-                        // ✅ Determinar si la fuente es relevante para la región seleccionada
-                        const sourceRegion = (source as any).region || 'Nacional'
-                        const isRelevant = !selectedRegion ||
-                          sourceRegion.toLowerCase() === 'nacional' ||
-                          sourceRegion.toLowerCase() === selectedRegion.toLowerCase()
 
-                        return (
-                          <div
-                            key={source.id}
-                            onClick={() => {
-                              setSelectedSourceIds(prev =>
-                                prev.includes(source.id)
-                                  ? prev.filter(id => id !== source.id)
-                                  : [...prev, source.id]
+                      {/* Panel expandible para modificar fuentes */}
+                      {showAllSources && (
+                        <div className="p-3 bg-white border rounded-lg space-y-3">
+                          <p className="text-xs text-gray-500">
+                            Haz clic en una fuente para seleccionar/deseleccionar:
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {availableSources.map(source => {
+                              const sourceRegion = source.region || 'Nacional'
+                              const isSelected = selectedSourceIds.includes(source.id)
+                              const isRelevant = !selectedRegion ||
+                                sourceRegion.toLowerCase() === 'nacional' ||
+                                sourceRegion.toLowerCase() === selectedRegion.toLowerCase()
+
+                              return (
+                                <div
+                                  key={source.id}
+                                  onClick={() => {
+                                    setSelectedSourceIds(prev =>
+                                      prev.includes(source.id)
+                                        ? prev.filter(id => id !== source.id)
+                                        : [...prev, source.id]
+                                    )
+                                  }}
+                                  className={`
+                                    cursor-pointer px-3 py-1.5 rounded-full text-xs font-medium border transition-all
+                                    ${isSelected
+                                      ? 'bg-blue-100 border-blue-400 text-blue-700'
+                                      : isRelevant
+                                        ? 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                        : 'bg-gray-50 border-gray-100 text-gray-400'}
+                                  `}
+                                  title={`Región: ${sourceRegion}`}
+                                >
+                                  {source.nombre_fuente}
+                                  {sourceRegion.toLowerCase() !== 'nacional' && (
+                                    <span className="ml-1 text-[9px] px-1 py-0.5 rounded bg-gray-100 text-gray-500">
+                                      {sourceRegion.substring(0, 3)}
+                                    </span>
+                                  )}
+                                  {isSelected && <span className="ml-1">✓</span>}
+                                </div>
                               )
-                            }}
-                            className={`
-                              cursor-pointer px-3 py-1 rounded-full text-xs font-medium border transition-colors flex items-center gap-1
-                              ${selectedSourceIds.includes(source.id)
-                                ? isRelevant
-                                  ? 'bg-blue-100 border-blue-400 text-blue-700'
-                                  : 'bg-gray-100 border-gray-300 text-gray-600'
-                                : isRelevant
-                                  ? 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                                  : 'bg-gray-50 border-gray-100 text-gray-400'}
-                            `}
-                            title={`Región: ${sourceRegion}`}
-                          >
-                            {source.nombre_fuente}
-                            {/* Mostrar indicador de región si no es Nacional */}
-                            {sourceRegion.toLowerCase() !== 'nacional' && (
-                              <span className={`text-[9px] px-1 py-0.5 rounded ${isRelevant ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-500'
-                                }`}>
-                                {sourceRegion.substring(0, 3)}
-                              </span>
-                            )}
-                            {selectedSourceIds.includes(source.id) && (
-                              <span className="text-blue-500 text-[10px]">✓</span>
-                            )}
+                            })}
                           </div>
-                        )
-                      })}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <p className="text-sm text-gray-500 italic">No se encontraron fuentes asociadas a tu cuenta.</p>

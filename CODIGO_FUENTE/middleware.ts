@@ -59,7 +59,6 @@ export async function middleware(request: NextRequest) {
         '/dashboard',
         '/admin',
         '/super-admin',
-        '/operator',
         '/perfil',
         '/crear-noticiero',
         '/timeline-noticiero',
@@ -107,18 +106,7 @@ export async function middleware(request: NextRequest) {
         }
     }
 
-    // Protección de rutas de Operador
-    if (path.startsWith('/operator') && user) {
-        const { data: userData } = await supabase
-            .from('users')
-            .select('role')
-            .eq('id', user.id)
-            .single()
 
-        if (!['admin', 'operator', 'super_admin'].includes(userData?.role || '')) {
-            return NextResponse.redirect(new URL('/unauthorized', request.url))
-        }
-    }
 
     // Verificar autenticación para endpoints de API cron
     // Permite tanto CRON_SECRET como usuarios admin/super_admin autenticados
@@ -155,7 +143,7 @@ export const config = {
         '/dashboard/:path*',
         '/super-admin/:path*',
         '/admin/:path*',
-        '/operator/:path*',
+
         '/perfil/:path*',
         '/crear-noticiero/:path*',
         '/timeline-noticiero/:path*',

@@ -1,8 +1,7 @@
 import { logTokenUsage, calculateChutesAICost } from '@/lib/usage-logger'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseSession, supabaseAdmin } from '@/lib/supabase-server'
-import { getCurrentUser } from '@/lib/supabase-auth'
-import { getResourceOwnerId } from '@/lib/resource-owner'
+// getCurrentUser y getResourceOwnerId ya no se usan - usamos userId cacheado al inicio
 import { getWeather } from '@/lib/weather'
 import { fetchWithRetry } from '@/lib/utils'
 import { CHUTES_CONFIG, getChutesHeaders } from '@/lib/chutes-config'
@@ -131,6 +130,9 @@ export async function POST(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
     }
+
+    // ✅ MEJORA: Cachear email al inicio para evitar revalidación posterior
+    const cachedUserEmail = session?.user?.email || 'system@local'
 
     // Extraer resto de configuración (ya leímos el body arriba)
     let {
@@ -337,8 +339,9 @@ export async function POST(request: NextRequest) {
       }
       console.log(`   ===============================`)
     }
-    const currentUser = await getCurrentUser()
-    const resourceOwnerId = currentUser ? getResourceOwnerId(currentUser) : userId
+    // ✅ MEJORA: Usar userId ya validado al inicio (evita re-validación que causa "Already Used")
+    // Anteriormente llamaba a getCurrentUser() aquí, pero después de 2+ min de scraping el token expiraba
+    const resourceOwnerId = userId
 
     const { data: campaignsRaw } = await supabase
       .from('campanas_publicitarias')
@@ -668,8 +671,9 @@ export async function POST(request: NextRequest) {
     // C.1 Aplicar colocación inteligente de audio (si está habilitado)
     // Esto usa IA para decidir dónde colocar intro, outro, cortinas y efectos
     // basándose en las descripciones que el usuario agregó a cada audio
-    const userEmail = session?.user?.email
-    if (audioConfig.cortinas_enabled && userEmail) {
+    // ✅ MEJORA: Usar email cacheado al inicio (evita error de token expirado)
+    const userEmail = cachedUserEmail
+    if (audioConfig.cortinas_enabled && userEmail && userEmail !== 'system@local') {
       console.log('🤖 Aplicando colocación inteligente de audio...')
 
       // Convertir timeline a formato compatible con audio-placement

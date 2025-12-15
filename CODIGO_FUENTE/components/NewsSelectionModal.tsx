@@ -73,7 +73,7 @@ export function NewsSelectionModal({
                     </div>
                 </DialogHeader>
 
-                <ScrollArea className="flex-1 p-6">
+                <ScrollArea className="flex-1 max-h-[60vh] overflow-y-auto p-6">
                     {news.length === 0 ? (
                         <p className="text-center text-gray-500 py-10">No hay noticias disponibles en esta categoría.</p>
                     ) : (

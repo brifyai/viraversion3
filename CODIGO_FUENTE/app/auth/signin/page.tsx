@@ -56,17 +56,6 @@ export default function SignIn() {
     }
   }
 
-
-  // Login rápido con usuarios de prueba
-  const handleQuickLogin = (testEmail: string, testPassword: string) => {
-    setEmail(testEmail)
-    setPassword(testPassword)
-    setTimeout(() => {
-      const form = document.getElementById('signin-form') as HTMLFormElement
-      if (form) form.requestSubmit()
-    }, 100)
-  }
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md">

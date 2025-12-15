@@ -33,7 +33,8 @@ export function createSupabaseBrowser() {
 // ============================================
 // CLIENTE LEGACY (compatibilidad hacia atrás)
 // ============================================
-// ⚠️ DEPRECADO: Usar createSupabaseBrowser()
+// ⚠️ DEPRECADO: Usar createSupabaseBrowser() para componentes cliente
+// TODO: Migrar todos los imports que usan este cliente al nuevo createSupabaseBrowser()
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 
@@ -486,45 +487,7 @@ export async function logTokenUsage(usage: Omit<TokenUsage, 'id' | 'created_at'>
   return data
 }
 
-export async function getUserStats(userId: string): Promise<any> {
-  // ⚠️ NOTA: La vista 'user_stats' no existe en el schema actual.
-  // Esta función requiere que se cree la vista o se implemente lógica alternativa.
-  console.warn('getUserStats: Vista user_stats no disponible en el schema actual')
-  return null
 
-  /* Original code - requiere vista user_stats:
-  const { data, error } = await supabase
-    .from('user_stats')
-    .select('*')
-    .eq('id', userId)
-    .single()
-
-  if (error) {
-    console.error('Error fetching user stats:', error)
-    return null
-  }
-
-  return data
-  */
-}
-
-// Funciones de limpieza y mantenimiento
-export async function cleanupOldFiles(daysOld: number = 30): Promise<void> {
-  // ⚠️ NOTA: La tabla 'uploaded_files' no existe en el schema actual.
-  // Esta función requiere que se cree la tabla o se use biblioteca_audio.
-  console.warn('cleanupOldFiles: Tabla uploaded_files no disponible en el schema actual')
-
-  /* Original code - requiere tabla uploaded_files:
-  const { error } = await supabase
-    .from('uploaded_files')
-    .delete()
-    .lt('created_at', new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000).toISOString())
-
-  if (error) {
-    console.error('Error cleaning up old files:', error)
-  }
-  */
-}
 
 export async function updateNewsSourceSuccessRate(sourceId: string, success: boolean): Promise<void> {
   // Lógica para actualizar la tasa de éxito del scraping

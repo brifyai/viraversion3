@@ -149,7 +149,9 @@ async function parseWithJSDOM(
             'biobiochile.cl': ['.article-content', '.nota-content', '.entry-content'],
             'cooperativa.cl': ['.article-body', '.nota-cuerpo'],
             'latercera.com': ['.single-content', '.article-body-content'],
-            '24horas.cl': ['.article-body', '.nota-content']
+            '24horas.cl': ['.article-body', '.nota-content'],
+            // ✅ NUEVO: CNN Chile
+            'cnnchile.com': ['.c-detail-body', '.article-body', '.c-detail__content', '.c-detail', '.story-body']
         }
 
         for (const [site, selectors] of Object.entries(siteSpecificSelectors)) {

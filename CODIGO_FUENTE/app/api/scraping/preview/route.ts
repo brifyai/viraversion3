@@ -449,6 +449,7 @@ export async function POST(request: NextRequest) {
         }
 
         console.log(`📡 Escaneando ${fuentes.length} fuentes para usuario ${user.email}`)
+        console.log(`📋 Fuentes a escanear:`, fuentes.map(f => `${f.nombre_fuente} (${f.region})`).join(', '))
 
         // Escanear cada fuente en paralelo (máx 3 a la vez)
         const allNoticias: NewsPreview[] = []

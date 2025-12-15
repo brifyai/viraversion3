@@ -16,25 +16,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Plus, Trash2, Upload, Globe, UserCheck, Radio } from 'lucide-react'
 
-// Regiones de Chile
-const chileanRegions = [
-  'Arica y Parinacota',
-  'Tarapacá',
-  'Antofagasta',
-  'Atacama',
-  'Coquimbo',
-  'Valparaíso',
-  'Metropolitana de Santiago',
-  "O'Higgins",
-  'Maule',
-  'Ñuble',
-  'Biobío',
-  'La Araucanía',
-  'Los Ríos',
-  'Los Lagos',
-  'Aysén',
-  'Magallanes y Antártica Chilena'
-]
+// Las regiones se cargan dinámicamente desde la tabla configuraciones_regiones
 
 // Interfaz para las fuentes de noticias (usando estructura de API /api/fuentes)
 interface NewsSource {
@@ -68,6 +50,10 @@ export default function ActivosPage() {
   const [newSourceUrl, setNewSourceUrl] = useState('')
   const [addingSource, setAddingSource] = useState(false)
 
+  // Estados para Regiones (cargadas desde DB)
+  const [availableRegions, setAvailableRegions] = useState<string[]>([])
+  const [loadingRegions, setLoadingRegions] = useState(true)
+
   // Estados para Clonación de Voz
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [isTrainingVoiceClone, setIsTrainingVoiceClone] = useState(false)
@@ -86,6 +72,40 @@ export default function ActivosPage() {
   const [voiceName, setVoiceName] = useState('')
   const [clonedVoices, setClonedVoices] = useState<any[]>([])
   const [loadingVoices, setLoadingVoices] = useState(false)
+
+  // Cargar regiones desde la base de datos
+  useEffect(() => {
+    async function cargarRegiones() {
+      setLoadingRegions(true)
+      try {
+        const { data, error } = await supabase
+          .from('configuraciones_regiones')
+          .select('region')
+          .eq('esta_activo', true)
+          .order('region')
+
+        if (error) {
+          console.error('Error cargando regiones:', error)
+        } else if (data) {
+          // Ordenar para que "Nacional" aparezca primero
+          const regiones = data.map(r => r.region)
+          const ordenadas = regiones.sort((a, b) => {
+            if (a === 'Nacional') return -1
+            if (b === 'Nacional') return 1
+            return a.localeCompare(b, 'es')
+          })
+          setAvailableRegions(ordenadas)
+          console.log('Regiones cargadas desde DB:', ordenadas)
+        }
+      } catch (error) {
+        console.error('Error inesperado cargando regiones:', error)
+      } finally {
+        setLoadingRegions(false)
+      }
+    }
+
+    cargarRegiones()
+  }, [])
 
   // Cargar voces clonadas
   useEffect(() => {
@@ -460,7 +480,7 @@ export default function ActivosPage() {
                           })}
 
                           {/* Separador si hay regiones sin fuentes */}
-                          {newsSources.length > 0 && chileanRegions.some(region =>
+                          {newsSources.length > 0 && availableRegions.some((region: string) =>
                             !newsSources.find(item => item.region === region)
                           ) && (
                               <div key="separator" className="px-2 py-1 text-xs text-gray-500 border-t">
@@ -469,9 +489,9 @@ export default function ActivosPage() {
                             )}
 
                           {/* Regiones sin fuentes */}
-                          {chileanRegions.filter(region =>
+                          {availableRegions.filter((region: string) =>
                             !newsSources.find(item => item.region === region)
-                          ).map(region => (
+                          ).map((region: string) => (
                             <SelectItem key={`empty-${region}`} value={region}>
                               {region}
                             </SelectItem>
@@ -632,7 +652,7 @@ export default function ActivosPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="todas">Todas las regiones</SelectItem>
-                          {chileanRegions.map(region => (
+                          {availableRegions.map((region: string) => (
                             <SelectItem key={region} value={region}>
                               {region}
                             </SelectItem>
@@ -742,7 +762,7 @@ export default function ActivosPage() {
                               <SelectValue placeholder="Selecciona una región" />
                             </SelectTrigger>
                             <SelectContent>
-                              {chileanRegions.map(region => (
+                              {availableRegions.map((region: string) => (
                                 <SelectItem key={region} value={region}>
                                   {region}
                                 </SelectItem>

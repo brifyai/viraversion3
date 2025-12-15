@@ -128,8 +128,6 @@ export default function UsuariosPage() {
                 return <Badge className="bg-purple-600"><Crown className="w-3 h-3 mr-1" />Super Admin</Badge>
             case 'admin':
                 return <Badge className="bg-blue-600"><Shield className="w-3 h-3 mr-1" />Admin</Badge>
-            case 'operator':
-                return <Badge className="bg-green-600"><User className="w-3 h-3 mr-1" />Operador</Badge>
             default:
                 return <Badge variant="secondary"><User className="w-3 h-3 mr-1" />Usuario</Badge>
         }
@@ -210,7 +208,6 @@ export default function UsuariosPage() {
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="user">Usuario</SelectItem>
-                                            <SelectItem value="operator">Operador</SelectItem>
                                             <SelectItem value="admin">Administrador</SelectItem>
                                         </SelectContent>
                                     </Select>

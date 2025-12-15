@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import { toast } from 'react-toastify'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useSupabaseUser } from '@/hooks/use-supabase-user'
 import { Navigation } from '@/components/navigation'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { User, Edit, Shield, Building } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { createSupabaseBrowser } from '@/lib/supabase'
 
 // Tipos de datos basados en la estructura REAL de la BD
 interface UserProfile {
@@ -21,14 +21,17 @@ interface UserProfile {
   is_active: boolean
   created_at: string
   last_login: string
-  admin_id?: string  // Para usuarios dependientes de un admin
+  admin_id?: string
   image?: string
 }
 
 export default function PerfilPage() {
-  const { session } = useSupabaseUser()
+  const { session, isLoading: authLoading } = useSupabaseUser()
   const [isLoading, setIsLoading] = useState(false)
   const [isEditingProfile, setIsEditingProfile] = useState(false)
+
+  // Crear cliente Supabase con soporte SSR
+  const supabase = useMemo(() => createSupabaseBrowser(), [])
 
   // Estado del perfil con campos que EXISTEN en la BD
   const [userProfile, setUserProfile] = useState<UserProfile>({
@@ -42,27 +45,26 @@ export default function PerfilPage() {
     last_login: ''
   })
 
-  // Cargar datos del usuario actual
-  useEffect(() => {
-    if (session?.user?.email) {
-      loadUserProfile()
-    }
-  }, [session])
+  // Obtener el email del usuario actual
+  const userEmail = session?.user?.email
 
-  const loadUserProfile = async () => {
-    if (!session?.user?.email) return
+  // Función para cargar el perfil
+  const loadUserProfile = useCallback(async () => {
+    if (!userEmail) return
 
     setIsLoading(true)
     try {
+      console.log('[Perfil] Loading profile for:', userEmail)
       const { data, error } = await supabase
         .from('users')
         .select('id, email, nombre_completo, role, company, is_active, created_at, last_login, admin_id, image')
-        .eq('email', session.user.email)
+        .eq('email', userEmail)
         .maybeSingle()
 
       if (error) {
         console.error('[Perfil] Error al cargar perfil:', error)
       } else if (data) {
+        console.log('[Perfil] Profile loaded:', data)
         setUserProfile({
           id: data.id || '',
           email: data.email || '',
@@ -81,12 +83,19 @@ export default function PerfilPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [userEmail, supabase])
+
+  // Cargar datos del usuario actual
+  useEffect(() => {
+    if (userEmail && !authLoading) {
+      loadUserProfile()
+    }
+  }, [userEmail, authLoading, loadUserProfile])
 
   const handleSaveProfile = async () => {
     setIsLoading(true)
     try {
-      if (!session?.user?.email) {
+      if (!userEmail) {
         toast.error('No se pudo identificar tu usuario.')
         return
       }
@@ -100,7 +109,7 @@ export default function PerfilPage() {
       const { error } = await supabase
         .from('users')
         .update(updates)
-        .eq('email', session.user.email)
+        .eq('email', userEmail)
 
       if (error) {
         console.error('[Perfil] Error al actualizar perfil:', error)
