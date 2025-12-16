@@ -76,6 +76,7 @@ export default function CrearNoticiero() {
   const [generateAudio, setGenerateAudio] = useState(false)
   const [selectedVoice, setSelectedVoice] = useState('es-mx')
   const [timeStrategy, setTimeStrategy] = useState('auto')
+  const [scheduledTime, setScheduledTime] = useState('08:00')  // Hora programada para el noticiero
   const [includeWeather, setIncludeWeather] = useState(true)
 
   // Estados para configuración de audio
@@ -540,6 +541,7 @@ export default function CrearNoticiero() {
     // Generar noticiero
     const result = await generateNewscast({
       region: selectedRegion,
+      radioName: selectedRadio,  // ✅ NUEVO: Nombre de la radio para la intro
       categories: selectedCategoryIds,
       categoryConfig,
       specificNewsUrls: selectedNewsUrls, // Enviar URLs específicas
@@ -548,6 +550,7 @@ export default function CrearNoticiero() {
       adCount: adCount,
       includeTimeWeather: includeWeather,
       timeStrategy: timeStrategy,
+      hora_generacion: timeStrategy === 'scheduled' ? scheduledTime : undefined,  // ✅ NUEVO: Hora programada
       newsTime: new Date().toLocaleTimeString('es-CL', {
         hour: '2-digit',
         minute: '2-digit'
@@ -851,22 +854,6 @@ export default function CrearNoticiero() {
                   max={60}
                 />
 
-                {/* Estimación de tiempo */}
-                {totalNewsSelected > 0 && (
-                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Clock className="h-5 w-5 text-blue-600" />
-                      <span className="font-medium text-blue-900">Tiempo Estimado</span>
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-3xl font-bold text-blue-700">~{estimatedMinutes}</span>
-                      <span className="text-blue-600">minutos</span>
-                    </div>
-                    <p className="text-sm text-blue-600 mt-1">
-                      Basado en {totalNewsSelected} noticias a {voiceWPM} palabras/min
-                    </p>
-                  </div>
-                )}
               </CardContent>
             </Card>
 
@@ -929,15 +916,27 @@ export default function CrearNoticiero() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">Estrategia de Hora</label>
+                      <label className="text-sm font-medium text-gray-700">Hora del Noticiero</label>
                       <select
                         className="w-full border rounded-md p-2"
                         value={timeStrategy}
                         onChange={(e) => setTimeStrategy(e.target.value)}
                       >
                         <option value="auto">Automática (Al generar)</option>
+                        <option value="scheduled">Hora Programada</option>
                         <option value="none">No incluir hora</option>
                       </select>
+                      {timeStrategy === 'scheduled' && (
+                        <div className="mt-2">
+                          <label className="text-xs text-gray-500">Hora de emisión:</label>
+                          <input
+                            type="time"
+                            value={scheduledTime}
+                            onChange={(e) => setScheduledTime(e.target.value)}
+                            className="w-full border rounded-md p-2 mt-1"
+                          />
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center space-x-2 mt-8">

@@ -36,13 +36,55 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Faltan campos requeridos' }, { status: 400 })
     }
 
+    // ✅ NUEVO: Normalizar URL para evitar duplicados
+    const normalizeUrl = (inputUrl: string): string => {
+        try {
+            let normalized = inputUrl.trim().toLowerCase()
+
+            // Asegurar protocolo
+            if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+                normalized = 'https://' + normalized
+            }
+
+            const urlObj = new URL(normalized)
+
+            // Remover trailing slash del pathname
+            let path = urlObj.pathname.replace(/\/+$/, '')
+            if (path === '') path = ''
+
+            // Reconstruir URL normalizada (sin www opcional)
+            return `${urlObj.protocol}//${urlObj.hostname}${path}`.toLowerCase()
+        } catch {
+            // Si falla el parsing, al menos quitar trailing slash
+            return inputUrl.trim().replace(/\/+$/, '').toLowerCase()
+        }
+    }
+
+    const normalizedUrl = normalizeUrl(url)
+    const normalizedRssUrl = rss_url ? normalizeUrl(rss_url) : null
+
+    // ✅ NUEVO: Verificar si ya existe una fuente con URL similar
+    const { data: existing } = await supabaseAdmin
+        .from('fuentes_final')
+        .select('id, url, nombre_fuente')
+        .or(`url.ilike.%${new URL(normalizedUrl).hostname}%`)
+
+    // Verificar si alguna URL existente coincide después de normalizar
+    const duplicate = existing?.find(f => normalizeUrl(f.url) === normalizedUrl)
+    if (duplicate) {
+        return NextResponse.json({
+            error: `Ya existe una fuente con esta URL: "${duplicate.nombre_fuente}"`,
+            existingSource: duplicate
+        }, { status: 409 }) // Conflict
+    }
+
     const { data, error } = await supabaseAdmin
         .from('fuentes_final')
         .insert({
             region,
             nombre_fuente,
-            url,
-            rss_url: rss_url || null,
+            url: normalizedUrl,  // ✅ Guardar URL normalizada
+            rss_url: normalizedRssUrl,
             tipo_scraping: tipo_scraping || 'web',
             selectores_css: selectores_css || {},
             esta_activo: true

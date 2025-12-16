@@ -161,6 +161,7 @@ export async function POST(request: NextRequest) {
     // Extraer resto de configuración (ya leímos el body arriba)
     let {
       region,
+      radioName,  // ✅ NUEVO: Nombre de la radio para usar en intro
       categories = [],
       categoryConfig, // Configuración detallada de conteos
       specificNewsUrls, // URLs específicas (Prioridad máxima)
@@ -194,6 +195,7 @@ export async function POST(request: NextRequest) {
     // Normalizar región antes de usarla
     const normalizedRegion = await normalizeRegion(region)
     console.log(`🌍 Región normalizada: '${region}' -> '${normalizedRegion}'`)
+    console.log(`📻 Nombre de radio recibido: '${radioName || 'NO RECIBIDO'}'`)  // ✅ DEBUG
     region = normalizedRegion // Actualizar variable local
 
     console.log(`🎙️ Generando noticiero para ${region} (${targetDuration}s)`)
@@ -475,17 +477,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Variantes de intro para no sonar repetitivo
+    // Usamos radioName si está disponible, si no usamos region
+    const displayName = radioName || region
     const introVariants = [
-      (time: string, region: string, weather: string) =>
-        `${time}. Bienvenidos al informativo de ${region}.${weather} Estos son los principales titulares.`,
-      (time: string, region: string, weather: string) =>
-        `${time}. Les damos la bienvenida al noticiero de ${region}.${weather} Comenzamos con las noticias.`,
-      (time: string, region: string, weather: string) =>
-        `${time}. Buen día. Estas son las noticias de ${region}.${weather} Aquí los titulares más importantes.`,
-      (time: string, region: string, weather: string) =>
-        `${time}. Iniciamos el informativo regional de ${region}.${weather} Vamos con las noticias.`,
-      (time: string, region: string, weather: string) =>
-        `${time}. Bienvenidos a su noticiero de ${region}.${weather} Empezamos con lo más destacado.`,
+      (time: string, name: string, weather: string) =>
+        `${time}. Bienvenidos al informativo de ${name}.${weather} Estos son los principales titulares.`,
+      (time: string, name: string, weather: string) =>
+        `${time}. Les damos la bienvenida al noticiero de ${name}.${weather} Comenzamos con las noticias.`,
+      (time: string, name: string, weather: string) =>
+        `${time}. Buen día. Estas son las noticias de ${name}.${weather} Aquí los titulares más importantes.`,
+      (time: string, name: string, weather: string) =>
+        `${time}. Iniciamos el informativo de ${name}.${weather} Vamos con las noticias.`,
+      (time: string, name: string, weather: string) =>
+        `${time}. Bienvenidos a su noticiero de ${name}.${weather} Empezamos con lo más destacado.`,
     ]
 
     let timeText = ''
@@ -509,7 +513,7 @@ export async function POST(request: NextRequest) {
 
     // Seleccionar variante aleatoria
     const randomVariant = introVariants[Math.floor(Math.random() * introVariants.length)]
-    const introText = randomVariant(timeText, region, weatherText)
+    const introText = randomVariant(timeText, displayName, weatherText)
 
     const introItem: any = {
       id: 'intro',
@@ -587,8 +591,9 @@ export async function POST(request: NextRequest) {
 
       if (currentDuration >= targetDuration) break
 
-      // ✅ MEJORA: Agregar déficit acumulado a esta noticia
-      const palabrasConCompensacion = (news.palabras_objetivo || 200) + Math.round(deficitAcumulado / 60 * effectiveWPM)
+      // ✅ MEJORA: Agregar déficit acumulado + 20% buffer para evitar contenido corto
+      const palabrasBase = Math.ceil((news.palabras_objetivo || 200) * 1.2) // +20% buffer
+      const palabrasConCompensacion = palabrasBase + Math.round(deficitAcumulado / 60 * effectiveWPM)
 
       // 🎬 Obtener transiciones para esta noticia
       const transitions = newsTransitions.get(news.id) || { preText: '', postText: '' }

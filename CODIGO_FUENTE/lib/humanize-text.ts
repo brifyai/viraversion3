@@ -9,6 +9,68 @@ import { logTokenUsage, calculateChutesAICost } from './usage-logger'
 import { CHUTES_CONFIG, getChutesHeaders } from './chutes-config'
 import { fetchWithRetry } from './utils'
 
+// ==================================================
+// PREPARACIÓN DE CONTENIDO ANTES DE ENVIAR A IA
+// ==================================================
+// Limpia y trunca el contenido para evitar respuestas vacías
+// ==================================================
+
+export function prepareContentForAI(text: string, maxChars: number = 4000): string {
+    if (!text) return ''
+
+    let cleaned = text
+        // 1. Remover metadata de fotos/créditos
+        .replace(/Foto:.*?\./gi, '')
+        .replace(/Imagen:.*?\./gi, '')
+        .replace(/Créditos?:.*?\./gi, '')
+        .replace(/REUTERS|AFP|AP|EFE|AGENCIA UNO|ATON|PHOTOSPORT|MEGA/gi, '')
+        .replace(/Foto: [A-Z][a-z]+ [A-Z][a-z]+/g, '')
+        .replace(/\([A-Z]+\)\.?/g, '') // (REUTERS), (AFP), etc.
+
+        // 2. Remover bylines
+        .replace(/Por [A-Z][a-záéíóúñ]+ [A-Z][a-záéíóúñ]+\.?/g, '')
+        .replace(/Escrito por.*?\./gi, '')
+
+        // 3. Remover fechas redundantes
+        .replace(/\d{1,2} de \w+ de \d{4}/g, '')
+        .replace(/Publicado:.*?\./gi, '')
+        .replace(/Actualizado:.*?\./gi, '')
+        .replace(/\d{1,2}\/\d{1,2}\/\d{4}/g, '')
+
+        // 4. Remover secciones no relevantes (todo después de estos encabezados)
+        .replace(/Sigue leyendo:.*$/gis, '')
+        .replace(/Te puede interesar:.*$/gis, '')
+        .replace(/Lee también:.*$/gis, '')
+        .replace(/Relacionado:.*$/gis, '')
+        .replace(/Mira también:.*$/gis, '')
+        .replace(/Más noticias:.*$/gis, '')
+
+        // 5. Remover elementos de UI/formularios
+        .replace(/Comparte esta noticia.*$/gis, '')
+        .replace(/Síguenos en.*$/gis, '')
+        .replace(/Newsletter.*$/gis, '')
+        .replace(/Suscríbete.*$/gis, '')
+
+        // 6. Limpiar espacios y caracteres problemáticos
+        .replace(/\s+/g, ' ')
+        .replace(/[×•►▶◄◀]/g, '')
+        .trim()
+
+    // 7. TRUNCAR a max caracteres (en límite de oración)
+    if (cleaned.length > maxChars) {
+        const truncated = cleaned.substring(0, maxChars)
+        const lastSentence = truncated.lastIndexOf('.')
+        if (lastSentence > maxChars * 0.7) {
+            cleaned = truncated.substring(0, lastSentence + 1)
+        } else {
+            cleaned = truncated + '...'
+        }
+        console.log(`   ✂️ Contenido truncado: ${text.length} → ${cleaned.length} chars`)
+    }
+
+    return cleaned
+}
+
 // Contexto para transiciones naturales entre noticias
 export interface TransitionContext {
     index: number           // Índice de la noticia actual (0-based)
@@ -123,6 +185,9 @@ export async function humanizeText(
     }
 
     try {
+        // ✅ NUEVO: Limpiar y truncar contenido antes de enviar a IA
+        const cleanedText = prepareContentForAI(text, 4000)
+
         // Intentar humanizar con IA (Chutes AI)
         const transitionPhrase = context ? getTransitionPhrase(context) : ''
         const targetWords = options?.targetWordCount || 100  // Default 100 palabras
@@ -157,7 +222,7 @@ IMPORTANTE: Solo devuelve el texto reformulado, sin explicaciones adicionales.`
 
         const userPrompt = `Reformula esta noticia para radio (objetivo: ~${targetWords} palabras):
 
-"${text}"
+"${cleanedText}"
 
 ${transitionPhrase ? `Comienza con: "${transitionPhrase}"` : ''}
 Región: ${region}
@@ -179,7 +244,7 @@ Recuerda: SOLO usa información del texto original. NO inventes datos.`
                         { role: 'user', content: userPrompt }
                     ],
                     max_tokens: Math.max(400, targetWords * 2),  // Ajustar max_tokens según objetivo
-                    temperature: 0.5  // Reducir temperatura para más fidelidad
+                    temperature: 0.7  // ✅ Ajustado para Qwen (mejor respuestas)
                 })
             },
             { retries: 3, backoff: 1000 }

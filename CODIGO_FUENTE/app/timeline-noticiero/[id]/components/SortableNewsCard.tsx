@@ -2,6 +2,7 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { NewsCard } from './NewsCard'
 import { AdCard } from './AdCard'
+import { CortinaCard } from './CortinaCard'
 import { GripVertical } from 'lucide-react'
 
 interface SortableNewsCardProps {
@@ -33,6 +34,22 @@ export function SortableNewsCard({ id, news, ...props }: SortableNewsCardProps) 
         position: 'relative' as 'relative',
     }
 
+    // Determinar qué tipo de card renderizar
+    const renderCard = () => {
+        const type = news.type?.toLowerCase()
+
+        if (type === 'ad' || type === 'advertisement') {
+            return <AdCard ad={news} index={props.index} onDelete={props.onDelete} />
+        }
+
+        if (type === 'cortina' || type === 'audio') {
+            return <CortinaCard cortina={news} index={props.index} onDelete={props.onDelete} />
+        }
+
+        // Default: NewsCard
+        return <NewsCard news={news} {...props} />
+    }
+
     return (
         <div ref={setNodeRef} style={style} className="group relative flex items-start gap-2">
             <div
@@ -43,12 +60,9 @@ export function SortableNewsCard({ id, news, ...props }: SortableNewsCardProps) 
                 <GripVertical className="h-5 w-5" />
             </div>
             <div className="flex-1">
-                {news.type === 'ad' ? (
-                    <AdCard ad={news} index={props.index} onDelete={props.onDelete} />
-                ) : (
-                    <NewsCard news={news} {...props} />
-                )}
+                {renderCard()}
             </div>
         </div>
     )
 }
+

@@ -120,27 +120,55 @@ export async function POST(request: NextRequest) {
             )
         }
 
+        // ✅ NUEVO: Función para normalizar URLs (evitar duplicados por trailing slash, etc)
+        const normalizeUrl = (inputUrl: string): string => {
+            try {
+                let normalized = inputUrl.trim().toLowerCase()
+
+                // Asegurar protocolo
+                if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+                    normalized = 'https://' + normalized
+                }
+
+                const urlObj = new URL(normalized)
+
+                // Remover trailing slash del pathname
+                let path = urlObj.pathname.replace(/\/+$/, '')
+                if (path === '') path = ''
+
+                // Reconstruir URL normalizada
+                return `${urlObj.protocol}//${urlObj.hostname}${path}`.toLowerCase()
+            } catch {
+                return inputUrl.trim().replace(/\/+$/, '').toLowerCase()
+            }
+        }
+
+        const normalizedUrl = normalizeUrl(url)
+        const hostname = new URL(normalizedUrl).hostname
+
         const ownerId = getResourceOwnerId(user)
 
-        // 1. Buscar si la fuente ya existe por URL
-        const { data: existingFuente } = await supabaseAdmin
+        // 1. Buscar si la fuente ya existe por hostname (más flexible que URL exacta)
+        const { data: existingFuentes } = await supabaseAdmin
             .from('fuentes_final')
-            .select('id')
-            .eq('url', url.trim())
-            .single()
+            .select('id, url, nombre_fuente')
+            .ilike('url', `%${hostname}%`)
+
+        // Buscar coincidencia exacta después de normalizar
+        const existingFuente = existingFuentes?.find(f => normalizeUrl(f.url) === normalizedUrl)
 
         let fuenteId: string
 
         if (existingFuente) {
             fuenteId = existingFuente.id
-            console.log(`[Fuentes] Fuente existente: ${fuenteId}`)
+            console.log(`[Fuentes] Fuente existente encontrada: ${existingFuente.nombre_fuente} (${fuenteId})`)
         } else {
-            // Crear nueva fuente
+            // Crear nueva fuente con URL normalizada
             const { data: newFuente, error: createError } = await supabaseAdmin
                 .from('fuentes_final')
                 .insert({
                     nombre_fuente: nombre_fuente.trim(),
-                    url: url.trim(),
+                    url: normalizedUrl,  // ✅ Guardar URL normalizada
                     rss_url: rss_url?.trim() || null,
                     region: region.trim(),
                     esta_activo: true

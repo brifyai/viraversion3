@@ -3,6 +3,7 @@ import { useRouter } from 'next/navigation'
 
 interface NewscastConfig {
     region: string
+    radioName?: string  // ✅ NUEVO: Nombre de la radio para la intro
     categories: string[]
     categoryConfig?: any // Configuración detallada de conteos por categoría
     specificNewsUrls?: string[] // URLs específicas seleccionadas
@@ -15,6 +16,7 @@ interface NewscastConfig {
     voiceModel?: string
     voiceWPM?: number // Palabras por minuto de la voz para cálculo preciso
     timeStrategy?: string
+    hora_generacion?: string  // ✅ NUEVO: Hora programada para el noticiero
     userId?: string // ✅ NUEVO: userId para fallback cuando sesión expira
     audioConfig?: {
         cortinas_enabled: boolean
@@ -69,6 +71,7 @@ export function useNewscastGeneration() {
                 },
                 body: JSON.stringify({
                     region: config.region,
+                    radioName: config.radioName,  // ✅ NUEVO: Nombre de la radio
                     categories: config.categories,
                     categoryConfig: config.categoryConfig,
                     specificNewsUrls: config.specificNewsUrls,
@@ -84,6 +87,7 @@ export function useNewscastGeneration() {
                     voiceModel: config.voiceModel || 'default',
                     voiceWPM: config.voiceWPM || 150, // WPM para cálculo de duración
                     timeStrategy: config.timeStrategy || 'auto',
+                    hora_generacion: config.hora_generacion,  // ✅ NUEVO: Hora programada
                     audioConfig: config.audioConfig,
                     userId: config.userId // ✅ NUEVO: enviar para fallback de auth
                 })
