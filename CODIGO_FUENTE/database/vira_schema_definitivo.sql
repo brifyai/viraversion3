@@ -1,9 +1,10 @@
 -- ==================================================
 -- VIRA - SCHEMA COMPLETO Y DEFINITIVO
 -- ==================================================
--- Versión: 3.0 - Sistema Multi-Tenant de Roles
--- Fecha: 09/12/2024
--- Descripción: Schema con soporte para SUPER_ADMIN, ADMIN, USER (dependiente)
+-- Versión: 3.1 - Actualizado con tablas de scraping
+-- Fecha: 17/12/2024
+-- Descripción: Schema con soporte para SUPER_ADMIN, ADMIN, USER (multi-tenant)
+--              + Sistema completo de scraping y métricas
 -- ==================================================
 
 -- Habilitar extensiones necesarias
@@ -135,9 +136,18 @@ CREATE TABLE IF NOT EXISTS "fuentes_final" (
         "imagen": [],
         "eliminar": []
     }',
+    "requiere_js" BOOLEAN DEFAULT false,  -- ✅ NUEVO: Si requiere JavaScript para renderizar
     "usa_premium_proxy" BOOLEAN DEFAULT false,
     "estado_test" TEXT DEFAULT 'pendiente' CHECK (estado_test IN ('pendiente', 'exitoso', 'fallido')),
     "ultimo_test" TIMESTAMPTZ,
+    -- ✅ Campos de scheduling y estadísticas de scraping
+    "frecuencia_scraping_minutos" INTEGER DEFAULT 60,
+    "ultima_ejecucion" TIMESTAMPTZ,
+    "proxima_ejecucion" TIMESTAMPTZ,
+    "total_scrapes" INTEGER DEFAULT 0,
+    "scrapes_exitosos" INTEGER DEFAULT 0,
+    "scrapes_fallidos" INTEGER DEFAULT 0,
+    "tasa_exito" NUMERIC(5,2) DEFAULT 100.0,
     "esta_activo" BOOLEAN DEFAULT true,
     "created_at" TIMESTAMPTZ DEFAULT NOW()
 );
@@ -216,7 +226,8 @@ CREATE TABLE IF NOT EXISTS "noticias_scrapeadas" (
     "contenido" TEXT,
     "resumen" TEXT,
     "url" TEXT UNIQUE,
-    "fuente" TEXT,  -- Nombre de la fuente
+    "fuente" TEXT,  -- Nombre de la fuente (redundancia útil)
+    "fuente_id" UUID REFERENCES "fuentes_final"("id") ON DELETE SET NULL,  -- ✅ NUEVO: Relación con fuentes_final
     "categoria" TEXT DEFAULT 'general',
     "sentimiento" TEXT DEFAULT 'neutral' CHECK (sentimiento IN ('positivo', 'negativo', 'neutral')),
     "prioridad" TEXT DEFAULT 'media' CHECK (prioridad IN ('alta', 'media', 'baja')),
@@ -333,6 +344,35 @@ CREATE TABLE IF NOT EXISTS "logs_procesamiento" (
 );
 
 COMMENT ON TABLE "logs_procesamiento" IS 'Logs de procesos de generación de noticieros';
+
+-- ==================================================
+-- TABLA: logs_scraping
+-- ✅ NUEVO: Logs específicos de scraping con métricas
+-- ==================================================
+CREATE TABLE IF NOT EXISTS "logs_scraping" (
+    "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    "fuente_id" UUID REFERENCES "fuentes_final"("id") ON DELETE SET NULL,
+    "region" TEXT NOT NULL,
+    "estado" TEXT NOT NULL CHECK (estado IN ('exitoso', 'fallido', 'parcial')),
+    "noticias_encontradas" INTEGER DEFAULT 0,
+    "noticias_nuevas" INTEGER DEFAULT 0,
+    "noticias_duplicadas" INTEGER DEFAULT 0,
+    "tiempo_ejecucion_ms" INTEGER,
+    "metodo_scraping" TEXT,  -- 'scrapingbee', 'rss', 'direct'
+    "scrapingbee_credits_usados" INTEGER DEFAULT 0,
+    "costo_estimado_usd" NUMERIC(10,6) DEFAULT 0,
+    "requests_realizados" INTEGER DEFAULT 0,
+    "bytes_descargados" INTEGER DEFAULT 0,
+    "mensaje_error" TEXT,
+    "metadata" JSONB DEFAULT '{}',
+    "created_at" TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS "idx_logs_scraping_fuente_id" ON "logs_scraping"("fuente_id");
+CREATE INDEX IF NOT EXISTS "idx_logs_scraping_created_at" ON "logs_scraping"("created_at");
+CREATE INDEX IF NOT EXISTS "idx_logs_scraping_estado" ON "logs_scraping"("estado");
+
+COMMENT ON TABLE "logs_scraping" IS 'Logs detallados de ejecuciones de scraping con métricas de costos';
 
 -- ==================================================
 -- TABLA: configuraciones_regiones
@@ -501,6 +541,7 @@ ALTER TABLE "system_config" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "uso_tokens" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "metricas_diarias" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "logs_procesamiento" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "logs_scraping" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "configuraciones_regiones" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "cola_tareas" ENABLE ROW LEVEL SECURITY;
 
@@ -518,6 +559,7 @@ CREATE POLICY "Acceso completo para autenticados" ON "facturas" FOR ALL USING (t
 CREATE POLICY "Acceso completo para autenticados" ON "uso_tokens" FOR ALL USING (true);
 CREATE POLICY "Acceso completo para autenticados" ON "metricas_diarias" FOR ALL USING (true);
 CREATE POLICY "Acceso completo para autenticados" ON "logs_procesamiento" FOR ALL USING (true);
+CREATE POLICY "Acceso completo para autenticados" ON "logs_scraping" FOR ALL USING (true);
 CREATE POLICY "Acceso completo para autenticados" ON "configuraciones_regiones" FOR ALL USING (true);
 CREATE POLICY "Acceso completo para autenticados" ON "cola_tareas" FOR ALL USING (true);
 CREATE POLICY "Acceso completo para autenticados" ON "system_config" FOR ALL USING (true);

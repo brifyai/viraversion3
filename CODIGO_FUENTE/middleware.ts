@@ -107,32 +107,9 @@ export async function middleware(request: NextRequest) {
     }
 
 
-
-    // Verificar autenticación para endpoints de API cron
-    // Permite tanto CRON_SECRET como usuarios admin/super_admin autenticados
-    if (path.startsWith('/api/cron')) {
-        const authHeader = request.headers.get('authorization')
-        const cronSecret = process.env.CRON_SECRET
-
-        // Opción 1: CRON_SECRET válido
-        const hasCronSecret = cronSecret && authHeader === `Bearer ${cronSecret}`
-
-        // Opción 2: Usuario autenticado con rol super_admin (solo super_admin puede acceder a cron)
-        let isSuperAdmin = false
-        if (user) {
-            const { data: userData } = await supabase
-                .from('users')
-                .select('role')
-                .eq('email', user.email)
-                .single()
-            // Solo super_admin puede acceder a cron
-            isSuperAdmin = userData?.role === 'super_admin'
-        }
-
-        if (!hasCronSecret && !isSuperAdmin) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-        }
-    }
+    // NOTA: Las API routes (/api/*) NO pasan por este middleware
+    // para evitar race conditions con refresh tokens.
+    // Cada API route maneja su propia autenticación internamente.
 
     return supabaseResponse
 }
@@ -143,7 +120,6 @@ export const config = {
         '/dashboard/:path*',
         '/super-admin/:path*',
         '/admin/:path*',
-
         '/perfil/:path*',
         '/crear-noticiero/:path*',
         '/timeline-noticiero/:path*',
@@ -151,12 +127,8 @@ export const config = {
         '/bibliotecas/:path*',
         '/plantillas/:path*',
         '/campanas/:path*',
-        // ✅ NUEVO: APIs que necesitan mantener sesión activa
-        '/api/generate-newscast',
-        '/api/scraping/:path*',
-        '/api/text-to-speech/:path*',
-        '/api/radios/:path*',
-        // Proteger algunos API endpoints
-        '/api/cron/:path*'
+        // ❌ REMOVIDO: Las API routes ahora NO pasan por el middleware
+        // para evitar race conditions con refresh tokens
+        // Las APIs manejan su propia autenticación con cookies
     ]
 }

@@ -84,9 +84,23 @@ function categorizarNoticia(titulo: string, bajada: string = ''): string {
     return 'Nacionales' // Default
 }
 
+// Tipo para fuente con selectores
+interface SourceInfo {
+    id: string
+    url: string
+    nombre_fuente: string
+    region: string
+    selectores_css?: {
+        titulo?: string[]
+        contenido?: string[]
+        eliminar?: string[]
+    }
+}
+
 // Scrapea la página principal de una fuente con ScrapingBee
 // ✅ OPTIMIZADO: Verifica cache antes de scrapear para ahorrar créditos
-async function scanSourceHomepage(source: { id: string, url: string, nombre_fuente: string }): Promise<{ noticias: NewsPreview[], fromCache: boolean }> {
+// ✅ MEJORADO: Usa selectores CSS si están configurados
+async function scanSourceHomepage(source: SourceInfo): Promise<{ noticias: NewsPreview[], fromCache: boolean }> {
     if (!SCRAPINGBEE_API_KEY) {
         console.error('❌ SCRAPINGBEE_API_KEY no configurada')
         return { noticias: [], fromCache: false }
@@ -138,9 +152,19 @@ async function scanSourceHomepage(source: { id: string, url: string, nombre_fuen
 
         const html = await response.text()
 
-        // Parsear HTML para extraer noticias
-        const noticias = parseNewsFromHTML(html, source)
-        console.log(`✅ Encontradas ${noticias.length} noticias en ${source.nombre_fuente}`)
+        // ✅ NUEVO: Usar selectores CSS si están configurados, si no usar regex
+        let noticias: NewsPreview[]
+        const hasCustomSelectors = source.selectores_css?.titulo && source.selectores_css.titulo.length > 0
+
+        if (hasCustomSelectors) {
+            console.log(`🎯 Usando selectores CSS personalizados: ${source.selectores_css!.titulo!.join(', ')}`)
+            noticias = await parseNewsWithSelectors(html, source, source.selectores_css!.titulo!)
+        } else {
+            // Parsear HTML con regex genéricos (comportamiento original)
+            noticias = parseNewsFromHTML(html, source)
+        }
+
+        console.log(`✅ Encontradas ${noticias.length} noticias en ${source.nombre_fuente} (modo: ${hasCustomSelectors ? 'CSS' : 'regex'})`)
 
         // ✅ PASO 3: Guardar en cache para futuros requests
         if (noticias.length > 0) {
@@ -247,7 +271,73 @@ function isNewsRecent(dateFromUrl: Date | null, maxDaysOld: number = 2): boolean
     return diffDays <= maxDaysOld
 }
 
-// Parser genérico de noticias desde HTML
+// ✅ NUEVO: Parser con selectores CSS usando JSDOM
+async function parseNewsWithSelectors(
+    html: string,
+    source: SourceInfo,
+    selectors: string[]
+): Promise<NewsPreview[]> {
+    const { JSDOM } = await import('jsdom')
+    const dom = new JSDOM(html)
+    const doc = dom.window.document
+
+    const noticias: NewsPreview[] = []
+    const seenUrls = new Set<string>()
+    const baseUrl = new URL(source.url).origin
+    const MAX_DAYS_OLD = 2
+
+    for (const selector of selectors) {
+        try {
+            const elements = doc.querySelectorAll(selector)
+            console.log(`   Selector '${selector}': ${elements.length} elementos encontrados`)
+
+            elements.forEach((el: Element) => {
+                // El elemento puede ser un <a> o contener un <a>
+                const anchor = el.tagName === 'A' ? el : el.querySelector('a')
+                if (!anchor) return
+
+                let href = anchor.getAttribute('href') || ''
+                let titulo = anchor.textContent?.trim() || ''
+
+                // Normalizar URL
+                if (href.startsWith('/')) {
+                    href = baseUrl + href
+                }
+
+                // Validaciones
+                if (seenUrls.has(href)) return
+                if (!href.includes('http')) return
+                if (href.includes('#') || href.includes('javascript:')) return
+                if (titulo.length < 20 || titulo.length > 300) return
+
+                // Filtrar noticias viejas
+                const dateFromUrl = extractDateFromUrl(href)
+                if (!isNewsRecent(dateFromUrl, MAX_DAYS_OLD)) return
+
+                seenUrls.add(href)
+
+                noticias.push({
+                    id: `preview-${Date.now()}-${noticias.length}`,
+                    titulo: titulo.replace(/\s+/g, ' '),
+                    bajada: '',
+                    url: href,
+                    categoria: categorizarNoticia(titulo),
+                    fuente: source.nombre_fuente,
+                    fuente_id: source.id,
+                    fecha_publicacion: dateFromUrl?.toISOString()
+                })
+            })
+
+            if (noticias.length >= 50) break
+        } catch (e) {
+            console.warn(`   Error con selector '${selector}':`, e)
+        }
+    }
+
+    return noticias
+}
+
+// Parser genérico de noticias desde HTML (fallback con regex)
 function parseNewsFromHTML(html: string, source: { id: string, url: string, nombre_fuente: string }): NewsPreview[] {
     const noticias: NewsPreview[] = []
 
@@ -322,7 +412,7 @@ function parseNewsFromHTML(html: string, source: { id: string, url: string, nomb
 async function getUserSources(
     resourceOwnerId: string,
     filterRegion?: string
-): Promise<{ id: string, url: string, nombre_fuente: string, region: string }[]> {
+): Promise<SourceInfo[]> {
     try {
         const { data: suscripciones, error: subError } = await supabaseAdmin
             .from('user_fuentes_suscripciones')
@@ -334,20 +424,22 @@ async function getUserSources(
                     url,
                     nombre_fuente,
                     region,
-                    esta_activo
+                    esta_activo,
+                    selectores_css
                 )
             `)
             .eq('user_id', resourceOwnerId)
             .eq('esta_activo', true)
 
         if (!subError && suscripciones && suscripciones.length > 0) {
-            let fuentes = suscripciones
+            let fuentes: SourceInfo[] = suscripciones
                 .filter((s: any) => s.fuente?.esta_activo)
                 .map((s: any) => ({
                     id: s.fuente.id,
                     url: s.fuente.url,
                     nombre_fuente: s.fuente.nombre_fuente,
-                    region: s.fuente.region
+                    region: s.fuente.region,
+                    selectores_css: s.fuente.selectores_css || {}
                 }))
 
             // ✅ Filtrar por región si se especifica

@@ -15,7 +15,8 @@ import {
   ArrowLeft,
   Download,
   CheckCircle,
-  Loader2
+  Loader2,
+  Trash2
 } from 'lucide-react'
 import {
   DndContext,
@@ -42,6 +43,16 @@ import { BackgroundMusicConfig } from './components/BackgroundMusicConfig'
 import { BackgroundMusicBar } from './components/BackgroundMusicBar'
 import { GenerateAudioButton } from './components/GenerateAudioButton'
 import { TimelineSummary } from './components/TimelineSummary'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 interface NewsItem {
   id: string
   title: string
@@ -101,6 +112,11 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
     url: null,
     volume: 0.2,
     config: null
+  })
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; newsId: string | null; newsTitle: string }>({
+    open: false,
+    newsId: null,
+    newsTitle: ''
   })
 
   const sensors = useSensors(
@@ -408,9 +424,21 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
   }
 
   const handleDeleteNews = async (id: string) => {
-    if (!timelineData || !confirm('¿Estás seguro de eliminar esta noticia?')) return
+    if (!timelineData) return
 
-    const newTimeline = timelineData.timeline.filter(item => item.id !== id)
+    // Encontrar la noticia para mostrar su título en el modal
+    const newsToDelete = timelineData.timeline.find(item => item.id === id)
+    setDeleteConfirm({
+      open: true,
+      newsId: id,
+      newsTitle: newsToDelete?.title || 'esta noticia'
+    })
+  }
+
+  const confirmDeleteNews = async () => {
+    if (!timelineData || !deleteConfirm.newsId) return
+
+    const newTimeline = timelineData.timeline.filter(item => item.id !== deleteConfirm.newsId)
 
     // Recalcular metadata
     const totalDuration = newTimeline.reduce((acc, item) => acc + (item.duration || 0), 0)
@@ -422,7 +450,8 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
     })
 
     await saveTimelineToDB(newTimeline)
-    setSelectedNewsIds(prev => prev.filter(newsId => newsId !== id))
+    setSelectedNewsIds(prev => prev.filter(newsId => newsId !== deleteConfirm.newsId))
+    setDeleteConfirm({ open: false, newsId: null, newsTitle: '' })
     toast.success('Noticia eliminada')
   }
 
@@ -742,6 +771,32 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
           }
         }}
       />
+
+      {/* Modal de confirmación de eliminación */}
+      <AlertDialog open={deleteConfirm.open} onOpenChange={(open) => !open && setDeleteConfirm({ open: false, newsId: null, newsTitle: '' })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-red-500" />
+              Eliminar noticia
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro de que deseas eliminar <strong>"{deleteConfirm.newsTitle}"</strong>?
+              <br />
+              Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteNews}
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

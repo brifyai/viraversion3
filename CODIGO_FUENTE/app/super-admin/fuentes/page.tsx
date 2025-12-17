@@ -11,8 +11,9 @@ interface Fuente {
     rss_url: string | null
     tipo_scraping: 'rss' | 'web' | 'ambos'
     selectores_css: {
-        contenido?: string[]
-        eliminar?: string[]
+        titulo?: string[]      // Para preview (escaneo de homepage)
+        contenido?: string[]   // Para deep scraping
+        eliminar?: string[]    // Para deep scraping
     }
     usa_premium_proxy: boolean
     estado_test: 'pendiente' | 'exitoso' | 'fallido'
@@ -22,8 +23,26 @@ interface Fuente {
 
 interface TestResult {
     success: boolean
-    results: { method: string; success: boolean; chars: number; preview: string; error?: string }[]
+    previewOk?: boolean
+    deepOk?: boolean
+    rssOk?: boolean
+    results: {
+        method: string
+        success: boolean
+        count?: number
+        chars?: number
+        preview: string
+        error?: string
+        selector_used?: string
+    }[]
     recommendation: string
+    debug?: {
+        homepage_url: string
+        article_url: string
+        html_size: string
+        containers_found?: string[]
+        html_sample: string
+    }
 }
 
 const REGIONES = [
@@ -51,6 +70,7 @@ export default function FuentesPage() {
         url: '',
         rss_url: '',
         tipo_scraping: 'web' as 'rss' | 'web' | 'ambos',
+        selectores_titulo: '',      // NUEVO: Para preview
         selectores_contenido: '',
         selectores_eliminar: '',
         usa_premium_proxy: false
@@ -90,6 +110,7 @@ export default function FuentesPage() {
             rss_url: formData.rss_url || null,
             tipo_scraping: formData.tipo_scraping,
             selectores_css: {
+                titulo: formData.selectores_titulo.split(',').map(s => s.trim()).filter(Boolean),
                 contenido: formData.selectores_contenido.split(',').map(s => s.trim()).filter(Boolean),
                 eliminar: formData.selectores_eliminar.split(',').map(s => s.trim()).filter(Boolean)
             },
@@ -172,6 +193,7 @@ export default function FuentesPage() {
             url: fuente.url,
             rss_url: fuente.rss_url || '',
             tipo_scraping: fuente.tipo_scraping,
+            selectores_titulo: fuente.selectores_css?.titulo?.join(', ') || '',
             selectores_contenido: fuente.selectores_css?.contenido?.join(', ') || '',
             selectores_eliminar: fuente.selectores_css?.eliminar?.join(', ') || '',
             usa_premium_proxy: fuente.usa_premium_proxy
@@ -192,6 +214,7 @@ export default function FuentesPage() {
             url: '',
             rss_url: '',
             tipo_scraping: 'web',
+            selectores_titulo: '',
             selectores_contenido: '',
             selectores_eliminar: '',
             usa_premium_proxy: false
@@ -274,8 +297,8 @@ export default function FuentesPage() {
                                     <td className="px-4 py-3 text-gray-300">{fuente.region}</td>
                                     <td className="px-4 py-3">
                                         <span className={`px-2 py-1 rounded text-xs ${fuente.tipo_scraping === 'rss' ? 'bg-green-500/20 text-green-400' :
-                                                fuente.tipo_scraping === 'ambos' ? 'bg-blue-500/20 text-blue-400' :
-                                                    'bg-yellow-500/20 text-yellow-400'
+                                            fuente.tipo_scraping === 'ambos' ? 'bg-blue-500/20 text-blue-400' :
+                                                'bg-yellow-500/20 text-yellow-400'
                                             }`}>
                                             {fuente.tipo_scraping.toUpperCase()}
                                         </span>
@@ -313,20 +336,79 @@ export default function FuentesPage() {
 
                 {/* Test Result */}
                 {testResult && (
-                    <div className={`mt-6 p-4 rounded-lg ${testResult.success ? 'bg-green-500/20 border border-green-500' : 'bg-red-500/20 border border-red-500'}`}>
-                        <h3 className="font-bold mb-2">Resultado del Test</h3>
-                        {testResult.results.map((r, i) => (
-                            <div key={i} className="mb-2">
-                                <span className="font-medium">{r.method}:</span>
-                                <span className={`ml-2 ${r.success ? 'text-green-400' : 'text-red-400'}`}>
-                                    {r.success ? `✅ ${r.chars} chars` : `❌ ${r.error || 'Sin contenido'}`}
+                    <div className={`mt-6 p-4 rounded-lg ${testResult.success ? 'bg-green-500/20 border border-green-500' : 'bg-yellow-500/20 border border-yellow-500'}`}>
+                        <div className="flex items-center gap-4 mb-3">
+                            <h3 className="font-bold text-lg">Resultado del Test</h3>
+                            <div className="flex gap-3">
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${testResult.previewOk ? 'bg-green-600' : 'bg-red-600'}`}>
+                                    Preview: {testResult.previewOk ? '✅' : '❌'}
                                 </span>
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${testResult.deepOk ? 'bg-green-600' : 'bg-red-600'}`}>
+                                    Deep: {testResult.deepOk ? '✅' : '❌'}
+                                </span>
+                            </div>
+                        </div>
+                        {testResult.results.map((r, i) => (
+                            <div key={i} className="mb-3 p-3 bg-gray-900/50 rounded">
+                                <div className="flex items-center gap-2">
+                                    <span className="font-medium">{r.method}</span>
+                                    <span className={`px-2 py-0.5 rounded text-xs ${r.success ? 'bg-green-600' : 'bg-red-600'}`}>
+                                        {r.success ? '✅ OK' : '❌ Fallo'}
+                                    </span>
+                                    {r.count !== undefined && (
+                                        <span className="text-blue-400 text-sm">{r.count} noticias</span>
+                                    )}
+                                    {r.chars !== undefined && (
+                                        <span className="text-purple-400 text-sm">{r.chars} chars</span>
+                                    )}
+                                </div>
+                                {r.selector_used && (
+                                    <div className="text-xs text-cyan-400 mt-1">Selector: {r.selector_used}</div>
+                                )}
                                 {r.preview && (
-                                    <div className="text-sm text-gray-400 mt-1 truncate">{r.preview}</div>
+                                    <div className="text-sm text-gray-400 mt-1 line-clamp-2">{r.preview}</div>
+                                )}
+                                {r.error && (
+                                    <div className="text-sm text-red-400 mt-1">Error: {r.error}</div>
                                 )}
                             </div>
                         ))}
-                        <div className="mt-2 font-medium">Recomendación: {testResult.recommendation}</div>
+                        <div className={`mt-3 p-2 rounded font-medium ${testResult.success ? 'bg-green-600/30' : 'bg-yellow-600/30'}`}>
+                            {testResult.recommendation}
+                        </div>
+
+                        {/* Debug Info */}
+                        {testResult.debug && (
+                            <details className="mt-4">
+                                <summary className="cursor-pointer text-sm text-gray-400 hover:text-white">
+                                    🔧 Debug Info (click para expandir)
+                                </summary>
+                                <div className="mt-2 p-3 bg-gray-900 rounded text-xs font-mono">
+                                    <div className="text-cyan-400 mb-1">Homepage: {testResult.debug.homepage_url}</div>
+                                    <div className="text-green-400 mb-1">Artículo testeado: {testResult.debug.article_url}</div>
+                                    <div className="text-purple-400 mb-2">HTML del artículo: {testResult.debug.html_size}</div>
+
+                                    {/* Contenedores encontrados */}
+                                    {testResult.debug.containers_found && testResult.debug.containers_found.length > 0 && (
+                                        <div className="mb-3">
+                                            <div className="text-orange-400 mb-1">📦 Contenedores detectados (usa estos como selectores):</div>
+                                            <ul className="list-disc list-inside text-green-300">
+                                                {testResult.debug.containers_found.map((c: string, i: number) => (
+                                                    <li key={i}>{c}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+
+                                    <div className="text-gray-400">
+                                        <div className="mb-1 text-yellow-400">Contenido del artículo (2000 chars):</div>
+                                        <div className="whitespace-pre-wrap break-words max-h-60 overflow-y-auto text-gray-300">
+                                            {testResult.debug.html_sample}
+                                        </div>
+                                    </div>
+                                </div>
+                            </details>
+                        )}
                     </div>
                 )}
 
@@ -400,9 +482,26 @@ export default function FuentesPage() {
                                     </select>
                                 </div>
 
+                                {/* NUEVO: Selector para Preview */}
+                                <div className="bg-blue-900/30 border border-blue-700 rounded-lg p-4">
+                                    <label className="block text-sm text-blue-300 mb-1 font-medium">
+                                        🔍 Selector para Preview (lista de noticias)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={formData.selectores_titulo}
+                                        onChange={e => setFormData({ ...formData, selectores_titulo: e.target.value })}
+                                        className="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2"
+                                        placeholder="h2 a, .headline a, article h3 a"
+                                    />
+                                    <p className="text-xs text-gray-400 mt-1">
+                                        CSS selector para encontrar links de noticias en la homepage. Si está vacío, usa detección automática.
+                                    </p>
+                                </div>
+
                                 <div>
                                     <label className="block text-sm text-gray-400 mb-1">
-                                        Selectores de Contenido (separados por coma)
+                                        Selectores de Contenido - Deep Scraping (separados por coma)
                                     </label>
                                     <input
                                         type="text"
