@@ -69,7 +69,19 @@ async function getNewsFromDB(region: string, limit: number = 20, maxHoursOld: nu
 // sanitizeForTTS y humanizeText se importan desde @/lib/humanize-text
 
 // Función para generar audio con TTS
-async function generateAudio(text: string, voice?: string): Promise<{ audioUrl: string; duration: number; s3Key: string } | null> {
+// ✅ MEJORADO: Ahora acepta voiceSettings para pasar speed, pitch, fmRadio al TTS
+interface VoiceSettings {
+  speed?: number
+  pitch?: number
+  fmRadioEffect?: boolean
+  fmRadioIntensity?: number
+}
+
+async function generateAudio(
+  text: string,
+  voice?: string,
+  voiceSettings?: VoiceSettings
+): Promise<{ audioUrl: string; duration: number; s3Key: string } | null> {
   try {
     const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/text-to-speech`, {
       method: 'POST',
@@ -77,7 +89,12 @@ async function generateAudio(text: string, voice?: string): Promise<{ audioUrl: 
       body: JSON.stringify({
         text,
         provider: 'auto',
-        voice
+        voice,
+        // ✅ NUEVO: Pasar configuración de voz al TTS
+        speed: voiceSettings?.speed ?? 15,
+        pitch: voiceSettings?.pitch ?? -5,
+        fmRadioEffect: voiceSettings?.fmRadioEffect ?? false,
+        fmRadioIntensity: voiceSettings?.fmRadioIntensity ?? 27
       })
     })
 
@@ -186,14 +203,25 @@ export async function POST(request: NextRequest) {
         background_music_id: null,
         background_music_url: null,
         background_music_volume: 0.2
+      },
+      // ✅ NUEVO: Configuración de voz (speed, pitch, fmRadio)
+      voiceSettings = {
+        speed: 15,
+        pitch: -5,
+        fmRadioEffect: false,
+        fmRadioIntensity: 27
       }
     } = config
 
-    // ✅ MEJORA: Usar WPM CALIBRADO de la voz seleccionada
-    // El WPM calibrado ya considera MasterSpeed (+15) y características de cada voz
-    const calibratedWPM = getCalibratedWPM(voiceModel || 'ai3-es-CL-Vicente')
-    const effectiveWPM = voiceWPM || calibratedWPM
-    console.log(`🎤 Usando WPM calibrado: ${effectiveWPM} (voz: ${voiceModel || 'default'})`)
+    // ✅ MEJORA: Usar WPM ajustado según velocidad configurada
+    // Fórmula: WPM_base * (1 + speed/100)
+    // Con speed +15 (default): 150 * 1.15 = 172 WPM
+    // Con speed -5: 150 * 0.95 = 142 WPM
+    const calibratedBaseWPM = 150  // WPM base sin ajuste de velocidad
+    const speedFactor = 1 + ((voiceSettings?.speed ?? 15) / 100)
+    const adjustedWPM = Math.round(calibratedBaseWPM * speedFactor)
+    const effectiveWPM = voiceWPM || adjustedWPM
+    console.log(`🎤 WPM: base ${calibratedBaseWPM} * speed ${speedFactor.toFixed(2)} = ${adjustedWPM} (usando: ${effectiveWPM})`)
 
     // Normalizar región antes de usarla
     const normalizedRegion = await normalizeRegion(region)
@@ -557,7 +585,7 @@ export async function POST(request: NextRequest) {
     // Generar audio de intro si se solicita
     if (generateAudioNow) {
       console.log('🎤 Generando audio de intro...')
-      const introAudio = await generateAudio(introText, voiceModel)
+      const introAudio = await generateAudio(introText, voiceModel, voiceSettings)
       if (introAudio) {
         introItem.audioUrl = introAudio.audioUrl
         introItem.s3Key = introAudio.s3Key
@@ -620,8 +648,8 @@ export async function POST(request: NextRequest) {
 
       if (currentDuration >= targetDuration) break
 
-      // ✅ MEJORA: Agregar déficit acumulado + 20% buffer para evitar contenido corto
-      const palabrasBase = Math.ceil((news.palabras_objetivo || 200) * 1.2) // +20% buffer
+      // ✅ MEJORA: Sin buffer extra - el re-procesamiento maneja excesos
+      const palabrasBase = news.palabras_objetivo || 200
       const palabrasConCompensacion = palabrasBase + Math.round(deficitAcumulado / 60 * effectiveWPM)
 
       // 🎬 Obtener transiciones para esta noticia
@@ -707,7 +735,7 @@ export async function POST(request: NextRequest) {
       // Generar audio de noticia si se solicita
       if (generateAudioNow) {
         console.log(`🎤 Generando audio de noticia ${i + 1}...`)
-        const newsAudio = await generateAudio(humanizedResult.content, voiceModel)
+        const newsAudio = await generateAudio(humanizedResult.content, voiceModel, voiceSettings)
         if (newsAudio) {
           newsItem.audioUrl = newsAudio.audioUrl
           newsItem.s3Key = newsAudio.s3Key
@@ -723,17 +751,9 @@ export async function POST(request: NextRequest) {
       const insercionesAqui = plan.inserciones.filter(ins => ins.despues_de_orden === ordenActual)
 
       for (const insercion of insercionesAqui) {
-        if (insercion.tipo === 'cortina') {
-          console.log(`🎵 Insertando cortina después de noticia ${ordenActual}`)
-          timeline.push({
-            id: `cortina-${ordenActual}`,
-            type: 'cortina',
-            title: 'Cortina musical',
-            content: '',
-            duration: insercion.duracion_segundos || 5
-          })
-          currentDuration += insercion.duracion_segundos || 5
-        } else if (insercion.tipo === 'publicidad' && campaigns && campaigns.length > 0) {
+        // NOTA: Las cortinas ahora se manejan via audio-placement.ts (no placeholders)
+        // Solo procesamos publicidades aquí
+        if (insercion.tipo === 'publicidad' && campaigns && campaigns.length > 0) {
           // Buscar la publicidad específica o usar rotación
           let currentAd = campaigns.find((c: any) => c.id === insercion.publicidad_id)
           if (!currentAd) {
@@ -799,17 +819,18 @@ export async function POST(request: NextRequest) {
         console.log(`✅ IA agregó ${enhancedTimeline.length - timeline.length} audios al timeline`)
 
         // Insertar los nuevos items de audio en el timeline principal
-        const newAudioItems = enhancedTimeline.filter(item => item.type === 'audio')
+        // Ahora audio-placement devuelve items con type 'cortina' y duration real
+        const newAudioItems = enhancedTimeline.filter(item => item.type === 'cortina' && item.audioId)
         for (const audioItem of newAudioItems) {
           // Encontrar la posición donde debería ir
           const pos = enhancedTimeline.indexOf(audioItem)
           timeline.splice(pos, 0, {
             id: audioItem.id,
-            type: 'cortina', // Para que el sistema lo reconozca
-            title: audioItem.audioName || 'Audio',
+            type: 'cortina',
+            title: audioItem.audioName || audioItem.title || 'Audio',
             content: audioItem.audioName || 'Audio insertado por IA',
             audioUrl: audioItem.audioUrl,
-            duration: 5,
+            duration: audioItem.duration || 30,  // Usar duración real del audio
             insertedBy: 'ai-intelligent',
             audioLibraryId: audioItem.audioId
           })
@@ -817,30 +838,75 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // C. Outro - ✅ MEJORA: Cierre extendido si falta tiempo
+    // C. Outro - ✅ MEJORA: Cierre extendido con IA si falta tiempo
     const tiempoActual = timeline.reduce((sum, item) => sum + (item.duration || 0), 0)
     const tiempoFaltante = targetDuration - tiempoActual - 15 // 15s para outro normal
 
     let outroText = ''
 
     if (tiempoFaltante > 30) {
-      // ✅ Generar cierre extendido para compensar tiempo faltante
+      // ✅ Generar cierre extendido con IA para compensar tiempo faltante
       const palabrasCierre = Math.round((tiempoFaltante / 60) * effectiveWPM)
-      console.log(`⏱️ Tiempo faltante: ${Math.round(tiempoFaltante)}s → Generando cierre extendido (${palabrasCierre} palabras)`)
+      console.log(`⏱️ Tiempo faltante: ${Math.round(tiempoFaltante)}s → Generando cierre IA (${palabrasCierre} palabras)`)
 
-      // Obtener resumen de las noticias del día
-      const titulares = noticiasValidas.slice(0, 5).map((n: any) => n.titulo).join(', ')
+      // Obtener títulos de las noticias que SÍ se cubrieron
+      const noticiasCubiertas = timeline
+        .filter((item: any) => item.type === 'news')
+        .map((item: any) => item.title)
+        .slice(0, 6)
+        .join('; ')
 
-      const cierreExtendido = `
-        Y así llegamos al cierre de nuestro informativo. 
-        Hoy les trajimos las noticias más relevantes de ${region}, incluyendo ${titulares}.
-        Recuerde mantenerse informado con nuestra programación habitual.
-        El tiempo para hoy se presenta ${['despejado', 'nublado', 'con posibles lluvias', 'agradable'][Math.floor(Math.random() * 4)]}.
-        Gracias por acompañarnos en Radio ${region}.
-        Estas fueron las noticias. Siga en nuestra sintonía.
-      `.replace(/\s+/g, ' ').trim()
+      // ✅ NUEVO: Generar cierre con IA que resume las noticias
+      const cierrePrompt = `Genera un cierre de noticiero de aproximadamente ${palabrasCierre} palabras.
+Resume brevemente las siguientes noticias que se cubrieron: ${noticiasCubiertas}
+Usa tono profesional de radio chilena (como Cooperativa o Bío-Bío).
+Incluye una despedida cordial mencionando "${displayName}".
+NO uses emojis ni caracteres especiales.`
 
-      outroText = cierreExtendido
+      let cierreExtendido = ''
+      try {
+        const cierreResponse = await fetchWithRetry(
+          CHUTES_CONFIG.endpoints.chatCompletions,
+          {
+            method: 'POST',
+            headers: getChutesHeaders(),
+            body: JSON.stringify({
+              model: CHUTES_CONFIG.model,
+              messages: [
+                { role: 'system', content: 'Eres un locutor de radio profesional chileno. Responde SOLO con el texto del cierre.' },
+                { role: 'user', content: cierrePrompt }
+              ],
+              max_tokens: palabrasCierre * 4,
+              temperature: 0.6
+            })
+          },
+          { retries: 2, backoff: 1000 }
+        )
+
+        if (cierreResponse.ok) {
+          const cierreData = await cierreResponse.json()
+          cierreExtendido = cierreData.choices?.[0]?.message?.content?.trim() || ''
+
+          // Registrar tokens
+          const cierreTokens = Math.ceil((cierrePrompt.length + cierreExtendido.length) / 4)
+          const cierreCost = calculateChutesAICost(cierreTokens)
+          await logTokenUsage({
+            user_id: userId,
+            servicio: 'chutes',
+            operacion: 'cierre_extendido',
+            tokens_usados: cierreTokens,
+            costo: cierreCost
+          })
+          console.log(`✅ Cierre IA generado: ${cierreExtendido.split(' ').length} palabras`)
+        }
+      } catch (cierreError) {
+        console.warn('⚠️ Error generando cierre IA, usando fallback:', cierreError)
+      }
+
+      // Fallback si falla la IA
+      if (!cierreExtendido || cierreExtendido.length < 50) {
+        cierreExtendido = `Y así llegamos al cierre de nuestro informativo. Hoy les trajimos las noticias más relevantes del día. Gracias por acompañarnos en ${displayName}. Siga en nuestra sintonía.`
+      }
 
       // Agregar segmento de cierre extendido antes del outro
       const cierreItem: any = {
@@ -855,7 +921,7 @@ export async function POST(request: NextRequest) {
 
       if (generateAudioNow) {
         console.log('🎤 Generando audio de cierre extendido...')
-        const cierreAudio = await generateAudio(cierreExtendido, voiceModel)
+        const cierreAudio = await generateAudio(cierreExtendido, voiceModel, voiceSettings)
         if (cierreAudio) {
           cierreItem.audioUrl = cierreAudio.audioUrl
           cierreItem.s3Key = cierreAudio.s3Key
@@ -869,8 +935,8 @@ export async function POST(request: NextRequest) {
       // Outro corto después del cierre extendido
       outroText = `Siga en nuestra sintonía. Hasta la próxima.`
     } else {
-      // Outro normal
-      outroText = `Estas fueron las noticias en Radio ${region}. Siga en nuestra sintonía.`
+      // Outro normal - usar displayName (radioName o region como fallback)
+      outroText = `Estas fueron las noticias en ${displayName}. Siga en nuestra sintonía.`
     }
 
     const outroItem: any = {
@@ -886,7 +952,7 @@ export async function POST(request: NextRequest) {
     // Generar audio de outro si se solicita
     if (generateAudioNow) {
       console.log('🎤 Generando audio de outro...')
-      const outroAudio = await generateAudio(outroText, voiceModel)
+      const outroAudio = await generateAudio(outroText, voiceModel, voiceSettings)
       if (outroAudio) {
         outroItem.audioUrl = outroAudio.audioUrl
         outroItem.s3Key = outroAudio.s3Key

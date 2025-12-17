@@ -23,7 +23,8 @@ export interface AudioItem {
     tipo: 'cortina' | 'musica' | 'efecto' | 'jingle' | 'intro' | 'outro'
     descripcion?: string
     audio: string
-    duracion?: string
+    duracion?: string  // Formato legible "0:30"
+    duration_seconds?: number  // Duración en segundos (preferido)
 }
 
 // Tipos para el timeline
@@ -36,6 +37,7 @@ export interface TimelineItem {
     audioUrl?: string
     audioId?: string
     audioName?: string
+    duration?: number  // Duración en segundos
 }
 
 // Resultado del placement
@@ -45,6 +47,7 @@ export interface AudioPlacement {
     audioUrl: string
     position: number
     reason: string
+    duration?: number  // Duración en segundos
 }
 
 /**
@@ -261,12 +264,31 @@ export async function decideAudioPlacements(
             for (const p of result.placements) {
                 const audio = audios.find(a => a.id === p.audioId)
                 if (audio) {
+                    // Obtener duración: preferir duration_seconds (int), luego parsear duracion (string)
+                    let durationSeconds = 30 // Default
+
+                    if (audio.duration_seconds && audio.duration_seconds > 0) {
+                        // Usar el campo entero directamente (preferido)
+                        durationSeconds = audio.duration_seconds
+                    } else if (audio.duracion) {
+                        // Parsear formato string "0:30" o "30"
+                        if (typeof audio.duracion === 'string' && audio.duracion.includes(':')) {
+                            const [mins, secs] = audio.duracion.split(':').map(Number)
+                            durationSeconds = (mins || 0) * 60 + (secs || 0)
+                        } else {
+                            durationSeconds = parseInt(audio.duracion as string) || 30
+                        }
+                    }
+
+                    console.log(`   ⏱️ Audio "${audio.nombre}": duración ${durationSeconds}s`)
+
                     placements.push({
                         audioId: audio.id,
                         audioName: audio.nombre,
                         audioUrl: audio.audio,
                         position: p.position,
-                        reason: p.reason || 'Decidido por IA'
+                        reason: p.reason || 'Decidido por IA',
+                        duration: durationSeconds
                     })
                 }
             }
@@ -305,11 +327,12 @@ export function insertAudiosInTimeline(
     for (const placement of sortedPlacements) {
         const audioItem: TimelineItem = {
             id: `audio-${placement.audioId}`,
-            type: 'audio',
+            type: 'cortina',  // Tipo cortina para que la UI lo muestre correctamente
             title: placement.audioName,
             audioUrl: placement.audioUrl,
             audioId: placement.audioId,
-            audioName: placement.audioName
+            audioName: placement.audioName,
+            duration: placement.duration || 30  // Duración real del audio
         }
 
         // Insertar en la posición indicada

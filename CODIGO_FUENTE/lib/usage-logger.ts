@@ -6,7 +6,7 @@ import { supabase } from './supabase'
 interface TokenUsage {
     user_id?: string
     servicio: 'chutes' | 'abacus' | 'groq' | 'openai' | 'elevenlabs' | 'azure' | 'local-tts'
-    operacion: 'humanizacion' | 'procesamiento_texto' | 'tts' | 'scraping' | 'audio_placement' | 'director'
+    operacion: 'humanizacion' | 'humanizacion_reprocess' | 'cierre_extendido' | 'procesamiento_texto' | 'tts' | 'scraping' | 'audio_placement' | 'director'
     tokens_usados: number
     costo: number
     moneda?: string

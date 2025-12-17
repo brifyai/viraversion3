@@ -105,7 +105,7 @@ export async function planificarNoticiero(
     // Calcular tiempo disponible para noticias
     const tiempoPublicidad = input.publicidades.reduce((sum, p) => sum + p.duracion_segundos, 0)
     const tiempoIntroOutro = 45 // ~45 segundos para intro y cierre
-    const tiempoCortinas = input.cortinas_enabled ? 20 : 0 // ~4 cortinas x 5 segundos
+    const tiempoCortinas = 0 // Cortinas se manejan via audio-placement.ts (no placeholders)
     const tiempoParaNoticias = input.duracion_objetivo_segundos - tiempoPublicidad - tiempoIntroOutro - tiempoCortinas
 
     const userPrompt = `Planifica este noticiero:
@@ -118,7 +118,7 @@ CONFIGURACIÓN:
 - Tiempo disponible para noticias: ~${tiempoParaNoticias} segundos
 - Velocidad de lectura: ${input.wpm} palabras por minuto
 - Publicidades a insertar: ${input.publicidades.length} (${input.publicidades.map(p => `"${p.nombre}" ${p.duracion_segundos}s`).join(', ') || 'ninguna'})
-- Cortinas habilitadas: ${input.cortinas_enabled ? 'Sí' : 'No'}
+- Cortinas habilitadas: ${input.cortinas_enabled ? 'Sí (gestionadas por audio-placement)' : 'No'}
 
 Responde con este JSON exacto:
 {
@@ -126,7 +126,6 @@ Responde con este JSON exacto:
     {"id": "id_noticia", "orden": 1, "segundos_asignados": 90, "palabras_objetivo": 225, "es_destacada": true}
   ],
   "inserciones": [
-    {"despues_de_orden": 2, "tipo": "cortina", "duracion_segundos": 5},
     {"despues_de_orden": 3, "tipo": "publicidad", "publicidad_id": "id_pub", "duracion_segundos": 25}
   ],
   "intro_palabras": 45,
@@ -276,15 +275,8 @@ function generarPlanFallback(input: DirectorInput): PlanNoticiero {
         })
     }
 
-    // Agregar cortinas si están habilitadas
-    if (input.cortinas_enabled && input.noticias.length > 3) {
-        const mitad = Math.floor(input.noticias.length / 2)
-        inserciones.push({
-            despues_de_orden: mitad,
-            tipo: 'cortina',
-            duracion_segundos: 5
-        })
-    }
+    // NOTA: Las cortinas se manejan via audio-placement.ts usando audios de la biblioteca
+    // No generamos placeholders aquí para evitar duplicados
 
     return {
         noticias,

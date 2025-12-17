@@ -338,6 +338,68 @@ Recuerda: Estilo noticiero profesional chileno. USA SOLO información del texto 
             return fallbackHumanize(text, transitionPhrase, targetWords)
         }
 
+        // ✅ Verificar si excede 25% del objetivo y re-procesar si es necesario
+        const maxAcceptableWords = Math.floor(targetWords * 1.25)  // 25% tolerancia (antes 15%)
+
+        if (generatedWordCount > maxAcceptableWords) {
+            console.warn(`⚠️ Exceso: ${generatedWordCount} palabras (max: ${maxAcceptableWords}). Re-procesando...`)
+
+            // Prompt estricto para reducir
+            const strictPrompt = `REDUCE este texto a MÁXIMO ${targetWords} palabras.
+Mantén SOLO la información más importante. NO agregues nada nuevo.
+El texto debe ser coherente y terminar en oración completa.
+
+TEXTO A REDUCIR:
+"${humanizedContent}"`
+
+            try {
+                const reprocessResponse = await fetchWithRetry(
+                    CHUTES_CONFIG.endpoints.chatCompletions,
+                    {
+                        method: 'POST',
+                        headers: getChutesHeaders(),
+                        body: JSON.stringify({
+                            model: CHUTES_CONFIG.model,
+                            messages: [
+                                { role: 'system', content: 'Eres un editor que reduce textos manteniendo lo esencial. Responde SOLO con el texto reducido.' },
+                                { role: 'user', content: strictPrompt }
+                            ],
+                            max_tokens: targetWords * 3,
+                            temperature: 0.3
+                        })
+                    },
+                    { retries: 2, backoff: 1000 }
+                )
+
+                if (reprocessResponse.ok) {
+                    const reprocessData = await reprocessResponse.json()
+                    const reducedContent = reprocessData.choices?.[0]?.message?.content?.trim()
+
+                    if (reducedContent) {
+                        const reducedWordCount = reducedContent.split(' ').length
+                        console.log(`   ✂️ Reducido: ${generatedWordCount} → ${reducedWordCount} palabras`)
+
+                        // Registrar tokens extra del re-procesamiento
+                        const reprocessTokens = Math.ceil((strictPrompt.length + reducedContent.length) / 4)
+                        const reprocessCost = calculateChutesAICost(reprocessTokens)
+
+                        await logTokenUsage({
+                            user_id: userId,
+                            servicio: 'chutes',
+                            operacion: 'humanizacion_reprocess',
+                            tokens_usados: reprocessTokens,
+                            costo: reprocessCost
+                        })
+
+                        humanizedContent = reducedContent
+                    }
+                }
+            } catch (reprocessError) {
+                console.warn('⚠️ Error en re-procesamiento, usando contenido original:', reprocessError)
+                // Continuar con el contenido original si falla el re-procesamiento
+            }
+        }
+
         // Calcular tokens de salida
         const outputTokens = Math.ceil(humanizedContent.length / 4)
         const totalTokens = inputTokens + outputTokens
