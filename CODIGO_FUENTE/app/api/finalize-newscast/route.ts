@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseSession, supabaseAdmin } from '@/lib/supabase-server';
 import { assembleNewscast, getNewscastSegments } from '@/lib/audio-assembler';
-import { getCurrentUser } from '@/lib/supabase-auth';
 import fs from 'fs';
 import path from 'path';
 
@@ -23,6 +22,8 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getSupabaseSession();
     const userId = session?.user?.id;
+    // ✅ FIX: Obtener email al inicio para evitar llamar getCurrentUser() después del ensamblaje
+    const userEmail = session?.user?.email;
 
     if (!userId) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
@@ -283,12 +284,12 @@ export async function POST(request: NextRequest) {
     console.log(`✅ Eliminados ${fragmentsDeleted} fragmentos TTS`);
 
     // 5.2 Mover archivo final a carpeta del usuario
-    const currentUser = await getCurrentUser();
+    // ✅ FIX: Usar userEmail de la sesión (obtenido al inicio) en vez de getCurrentUser()
     let finalAudioUrl = assemblyResult.audioUrl;
     let finalLocalPath = assemblyResult.s3Key;
 
-    if (currentUser?.email) {
-      const userFolder = currentUser.email.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase().substring(0, 50);
+    if (userEmail) {
+      const userFolder = userEmail.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase().substring(0, 50);
       const userNoticieroDir = path.join(process.cwd(), 'public', 'audio', userFolder, 'noticieros');
 
       // Crear directorio si no existe

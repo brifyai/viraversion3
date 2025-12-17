@@ -523,7 +523,8 @@ export default function CrearNoticiero() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               noticias: newsToScrape,
-              region: selectedRegion || 'Nacional'
+              region: selectedRegion || 'Nacional',
+              userId: session?.user?.id  // ✅ FIX: Fallback auth para operaciones largas
             })
           })
 

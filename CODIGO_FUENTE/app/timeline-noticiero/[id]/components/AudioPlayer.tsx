@@ -19,6 +19,26 @@ interface AudioPlayerProps {
     className?: string
 }
 
+/**
+ * Transforma URLs de audio para que funcionen en producción
+ * En producción, los archivos en /public creados después del build no son accesibles
+ * directamente, así que los servimos via API route
+ */
+function getAudioUrl(originalUrl: string): string {
+    // Si ya es una URL externa o de S3, dejar como está
+    if (originalUrl.startsWith('http://') || originalUrl.startsWith('https://')) {
+        return originalUrl
+    }
+
+    // Si es una URL local de audio, usar la API route para servirla
+    if (originalUrl.startsWith('/audio/') || originalUrl.startsWith('/generated-audio/')) {
+        return `/api/audio?file=${encodeURIComponent(originalUrl)}`
+    }
+
+    // Otros casos: devolver original
+    return originalUrl
+}
+
 export function AudioPlayer({ src, onPlay, onPause, onEnded, className = '' }: AudioPlayerProps) {
     const audioRef = useRef<HTMLAudioElement>(null)
     const [isPlaying, setIsPlaying] = useState(false)
@@ -102,7 +122,7 @@ export function AudioPlayer({ src, onPlay, onPause, onEnded, className = '' }: A
 
     return (
         <div className={`bg-white rounded-lg border p-3 shadow-sm ${className}`}>
-            <audio ref={audioRef} src={src} />
+            <audio ref={audioRef} src={getAudioUrl(src)} />
 
             <div className="flex items-center gap-3">
                 {/* Play/Pause Button */}

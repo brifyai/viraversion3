@@ -53,6 +53,28 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+
+/**
+ * Transforma URLs de audio para que funcionen en producción
+ * En producción, los archivos en /public creados después del build 
+ * no son accesibles directamente, así que los servimos via API route
+ */
+function getAudioUrl(originalUrl: string | undefined): string {
+  if (!originalUrl) return ''
+
+  // Si ya es una URL externa o de S3, dejar como está
+  if (originalUrl.startsWith('http://') || originalUrl.startsWith('https://')) {
+    return originalUrl
+  }
+
+  // Si es una URL local de audio, usar la API route para servirla
+  if (originalUrl.startsWith('/audio/') || originalUrl.startsWith('/generated-audio/')) {
+    return `/api/audio?file=${encodeURIComponent(originalUrl)}`
+  }
+
+  // Otros casos: devolver original
+  return originalUrl
+}
 interface NewsItem {
   id: string
   title: string
@@ -694,11 +716,11 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
             </CardHeader>
             <CardContent>
               <audio controls className="w-full mb-4">
-                <source src={newscast.url_audio} type="audio/mpeg" />
+                <source src={getAudioUrl(newscast.url_audio)} type="audio/mpeg" />
               </audio>
               <Button
                 variant="outline"
-                onClick={() => window.open(newscast.url_audio, '_blank')}
+                onClick={() => window.open(getAudioUrl(newscast.url_audio), '_blank')}
               >
                 <Download className="mr-2 h-4 w-4" />
                 Descargar MP3

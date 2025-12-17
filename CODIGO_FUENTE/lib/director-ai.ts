@@ -134,6 +134,9 @@ Responde con este JSON exacto:
 }`
 
     try {
+        // ✅ Delay antes de llamar a la IA para evitar 429 en producción
+        await new Promise(resolve => setTimeout(resolve, 2000))
+
         const response = await fetchWithRetry(
             CHUTES_CONFIG.endpoints.chatCompletions,
             {

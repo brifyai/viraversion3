@@ -190,7 +190,7 @@ async function scanSourceHomepage(source: SourceInfo): Promise<{ noticias: NewsP
                     categorias_conteo: categoriasConteo,
                     total_noticias: noticias.length,
                     created_at: new Date().toISOString(),
-                    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 horas
+                    expires_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString() // 6 horas
                 }, {
                     onConflict: 'fuente_url'
                 })

@@ -474,14 +474,41 @@ function cleanText(text: string): string {
 
 export async function POST(request: NextRequest) {
     try {
-        // Autenticar usuario
-        const user = await getCurrentUser()
-        if (!user) {
-            return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+        const body = await request.json()
+        const { noticias, region = 'Nacional', userId: bodyUserId } = body
+
+        // ✅ FIX: Auth via body userId first (for long operations), then session
+        // Esto evita race conditions con refresh tokens durante operaciones largas
+        let userId: string | null = null
+        let userEmail: string = 'unknown'
+        let authMethod = 'session'
+
+        if (bodyUserId) {
+            // Validar que el userId existe en la DB
+            const { data: userCheck } = await supabaseAdmin
+                .from('users')
+                .select('id, email')
+                .eq('id', bodyUserId)
+                .single()
+
+            if (userCheck) {
+                userId = bodyUserId
+                userEmail = userCheck.email
+                authMethod = 'body'
+            }
         }
 
-        const body = await request.json()
-        const { noticias, region = 'Nacional' } = body
+        // Fallback a getCurrentUser si no vino userId en body
+        if (!userId) {
+            const user = await getCurrentUser()
+            if (!user) {
+                return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+            }
+            userId = user.id
+            userEmail = user.email
+        }
+
+        console.log(`🔐 Auth via ${authMethod}: ${userEmail}`)
 
         if (!noticias || !Array.isArray(noticias) || noticias.length === 0) {
             return NextResponse.json({
@@ -498,7 +525,7 @@ export async function POST(request: NextRequest) {
             }, { status: 400 })
         }
 
-        console.log(`🔍 Iniciando scraping profundo de ${noticias.length} noticias para ${user.email}`)
+        console.log(`🔍 Iniciando scraping profundo de ${noticias.length} noticias para ${userEmail}`)
 
         // Scrapear noticias en lotes de 3
         const batchSize = 3

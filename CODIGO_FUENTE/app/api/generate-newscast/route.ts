@@ -304,6 +304,28 @@ export async function POST(request: NextRequest) {
     if (specificNewsUrls && specificNewsUrls.length > 0) {
       console.log(`🎯 Usando ${specificNewsUrls.length} URLs específicas`)
 
+      // ✅ MEJORA: Normalizar URLs para mejor matching
+      const normalizeUrl = (url: string): string => {
+        try {
+          // Remover trailing slashes y query params para matching más flexible
+          let normalized = url.trim()
+          // Remover query params (?algo=valor)
+          normalized = normalized.split('?')[0]
+          // Remover trailing slash
+          normalized = normalized.replace(/\/+$/, '')
+          // Decode URI para manejar emojis y caracteres especiales
+          try {
+            normalized = decodeURIComponent(normalized)
+          } catch (e) {
+            // Si falla el decode, usar original
+          }
+          return normalized.toLowerCase()
+        } catch (e) {
+          return url.toLowerCase()
+        }
+      }
+
+      // Primero intentar match exacto
       const { data: specificNews, error: specificError } = await supabase
         .from('noticias_scrapeadas')
         .select('*')
@@ -315,8 +337,46 @@ export async function POST(request: NextRequest) {
 
       selectedNews = specificNews || []
 
+      // ✅ Si no encontramos todas, intentar match normalizado
+      if (selectedNews.length < specificNewsUrls.length) {
+        console.log(`🔍 Match exacto encontró ${selectedNews.length}/${specificNewsUrls.length}, intentando match normalizado...`)
+
+        // Obtener URLs ya encontradas
+        const foundUrls = new Set(selectedNews.map(n => normalizeUrl(n.url)))
+
+        // URLs que faltan (normalizadas)
+        const missingNormalizedUrls = specificNewsUrls
+          .map((url: string) => normalizeUrl(url))
+          .filter((url: string) => !foundUrls.has(url))
+
+        if (missingNormalizedUrls.length > 0) {
+          // Buscar todas las noticias recientes y filtrar manualmente
+          const { data: allNews } = await supabase
+            .from('noticias_scrapeadas')
+            .select('*')
+            .eq('region', region)
+            .order('fecha_scraping', { ascending: false })
+            .limit(100)
+
+          if (allNews) {
+            for (const news of allNews) {
+              const normalizedNewsUrl = normalizeUrl(news.url)
+              if (missingNormalizedUrls.includes(normalizedNewsUrl) && !foundUrls.has(normalizedNewsUrl)) {
+                selectedNews.push(news)
+                foundUrls.add(normalizedNewsUrl)
+                console.log(`   ✅ Match normalizado encontró: ${news.titulo?.substring(0, 50)}...`)
+              }
+            }
+          }
+        }
+      }
+
       if (selectedNews.length < specificNewsUrls.length) {
         console.warn(`⚠️ Solicitadas ${specificNewsUrls.length} noticias específicas, pero solo se encontraron ${selectedNews.length} en DB`)
+        // Log URLs no encontradas para debug
+        const foundNormalizedUrls = new Set(selectedNews.map(n => normalizeUrl(n.url)))
+        const notFound = specificNewsUrls.filter((url: string) => !foundNormalizedUrls.has(normalizeUrl(url)))
+        console.warn(`   URLs no encontradas:`, notFound.slice(0, 3))
       }
 
       console.log(`✅ Selección por URL completada: ${selectedNews.length} noticias`)
@@ -692,10 +752,13 @@ export async function POST(request: NextRequest) {
         finalContent = finalContent + ' ' + transitions.postText
       }
 
-      // ✅ MEJORA: Delay aumentado a 2.5s + backoff progresivo para evitar rate limiting (429)
-      const baseDelay = 2500
-      const progressiveDelay = baseDelay + (i * 300) // Cada noticia espera 300ms más
-      await new Promise(resolve => setTimeout(resolve, progressiveDelay))
+      // ✅ MEJORA: Delay ANTES de la siguiente humanización para evitar 429 en producción
+      // En producción las peticiones van mucho más rápido que en dev
+      if (i < noticiasValidas.length - 1) {  // No esperar después de la última noticia
+        const baseDelay = 4000  // 4 segundos base (antes 2.5s)
+        const progressiveDelay = baseDelay + (i * 350)  // +350ms por cada noticia (antes 300ms)
+        await new Promise(resolve => setTimeout(resolve, progressiveDelay))
+      }
 
       // Actualizar contadores de tokens y costos
       totalTokens += humanizedResult.tokensUsed
@@ -981,7 +1044,12 @@ NO uses emojis ni caracteres especiales.`
           categories,
           config,
           news_count: selectedNews.length,
-          ads_count: timeline.filter(t => t.type === 'advertisement').length
+          ads_count: timeline.filter(t => t.type === 'advertisement').length,
+          // ✅ NUEVO: Guardar configuración de voz usada
+          voice_settings: voiceSettings,
+          voice_model: voiceModel,
+          wpm_used: effectiveWPM,
+          generated_at: new Date().toISOString()
         }
       })
       .select()

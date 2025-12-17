@@ -288,7 +288,7 @@ Recuerda: Estilo noticiero profesional chileno. USA SOLO información del texto 
                     temperature: 0.5  // ✅ REDUCIDO de 0.7 a 0.5 para más consistencia
                 })
             },
-            { retries: 3, backoff: 1000 }
+            { retries: 3, backoff: 2000 }  // ✅ Aumentado para evitar 429 en producción
         )
 
         if (!response.ok) {
@@ -368,7 +368,7 @@ TEXTO A REDUCIR:
                             temperature: 0.3
                         })
                     },
-                    { retries: 2, backoff: 1000 }
+                    { retries: 2, backoff: 2000 }  // ✅ Aumentado para evitar 429 en producción
                 )
 
                 if (reprocessResponse.ok) {
