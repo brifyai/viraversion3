@@ -112,10 +112,10 @@ function SuperAdminDashboard({ className }: DashboardProps) {
               Configuración
             </Button>
           </Link>
-          <Link href="/super-admin/scraping">
+          <Link href="/super-admin/fuentes">
             <Button>
               <Newspaper className="mr-2 h-4 w-4" />
-              Panel Scraping
+              Gestión Fuentes
             </Button>
           </Link>
         </div>
@@ -186,17 +186,17 @@ function SuperAdminDashboard({ className }: DashboardProps) {
           </Card>
         </Link>
 
-        <Link href="/super-admin/scraping">
+        <Link href="/super-admin/fuentes">
           <Card className="hover:bg-slate-50 transition-colors cursor-pointer h-full border-2 hover:border-green-200">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Newspaper className="h-5 w-5 text-green-500" />
-                Panel de Scraping
+                Gestión de Fuentes
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                Administra fuentes de noticias, ejecuta scraping manual.
+                Administra fuentes de noticias y ejecuta scraping manual.
               </p>
             </CardContent>
           </Card>

@@ -52,10 +52,8 @@ pip install -r requirements.txt
 
 ### 5. Configurar Base de Datos
 
-Ejecutar los scripts SQL en Supabase:
-1. `vira_schema_definitivo.sql` - Schema principal
-2. `DATOS_RADIOS_SQL.sql` - Radios de ejemplo
-3. `DATOS_FUENTES_FINAL_SQL.sql` - Fuentes de noticias
+Ejecutar en Supabase SQL Editor:
+1. `CODIGO_FUENTE/database/vira_schema_actual.sql` - Schema principal completo
 
 ---
 

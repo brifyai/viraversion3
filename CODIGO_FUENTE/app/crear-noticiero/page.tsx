@@ -12,6 +12,7 @@ import { CategorySelector } from '@/components/newscast/CategorySelector'
 import { DurationSlider } from '@/components/newscast/DurationSlider'
 import { GenerateButton } from '@/components/newscast/GenerateButton'
 import { VoiceSelector } from '@/components/newscast/VoiceSelector'
+import { VoiceConfig, defaultVoiceConfig, type VoiceConfigSettings } from '@/components/newscast/VoiceConfig'
 import { useNewscastGeneration } from '@/hooks/useNewscastGeneration'
 import { useSupabaseUser } from '@/hooks/use-supabase-user'  // ✅ Para obtener userId
 import { Save, Settings, Music, Clock, Search, Loader2, Newspaper, CheckCircle } from 'lucide-react'
@@ -75,6 +76,7 @@ export default function CrearNoticiero() {
   const [adCount, setAdCount] = useState(3)
   const [generateAudio, setGenerateAudio] = useState(false)
   const [selectedVoice, setSelectedVoice] = useState('es-mx')
+  const [voiceConfig, setVoiceConfig] = useState<VoiceConfigSettings>(defaultVoiceConfig)
   const [timeStrategy, setTimeStrategy] = useState('auto')
   const [scheduledTime, setScheduledTime] = useState('08:00')  // Hora programada para el noticiero
   const [includeWeather, setIncludeWeather] = useState(true)
@@ -557,6 +559,12 @@ export default function CrearNoticiero() {
       }),
       voiceModel: selectedVoice,
       voiceWPM: voiceWPM,
+      voiceSettings: {
+        speed: voiceConfig.speed,
+        pitch: voiceConfig.pitch,
+        fmRadioEffect: voiceConfig.fmRadioEffect,
+        fmRadioIntensity: voiceConfig.fmRadioIntensity
+      },
       audioConfig: {
         cortinas_enabled: cortinasEnabled,
         cortinas_frequency: cortinasFrequency,
@@ -902,16 +910,18 @@ export default function CrearNoticiero() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <VoiceSelector
-                        value={selectedVoice}
-                        onChange={(voiceId, wpm) => {
-                          setSelectedVoice(voiceId)
-                          if (wpm) setVoiceWPM(wpm)
-                        }}
-                      />
-                    </div>
+                  <div className="space-y-4">
+                    <VoiceSelector
+                      value={selectedVoice}
+                      onChange={(voiceId, wpm) => {
+                        setSelectedVoice(voiceId)
+                        if (wpm) setVoiceWPM(wpm)
+                      }}
+                    />
+                    <VoiceConfig
+                      settings={voiceConfig}
+                      onChange={setVoiceConfig}
+                    />
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">

@@ -9,6 +9,7 @@ import { applyIntelligentAudioPlacement, TimelineItem } from '@/lib/audio-placem
 import { humanizeText, TransitionContext, sanitizeForTTS } from '@/lib/humanize-text'
 import { planificarNoticiero, calcularImportancia, PlanNoticiero } from '@/lib/director-ai'
 import { buildFullScript, NewsForScript, ScriptSegment, getTransitionsForNews } from '@/lib/script-builder'
+import { getCalibratedWPM, TIMING_CONSTANTS } from '@/lib/tts-providers'
 
 // Cliente Supabase
 const supabase = supabaseAdmin
@@ -188,9 +189,11 @@ export async function POST(request: NextRequest) {
       }
     } = config
 
-    // Usar WPM real para cálculos precisos de duración
-    const effectiveWPM = voiceWPM || 150
-    console.log(`🎤 Usando WPM: ${effectiveWPM} para estimaciones de duración`)
+    // ✅ MEJORA: Usar WPM CALIBRADO de la voz seleccionada
+    // El WPM calibrado ya considera MasterSpeed (+15) y características de cada voz
+    const calibratedWPM = getCalibratedWPM(voiceModel || 'ai3-es-CL-Vicente')
+    const effectiveWPM = voiceWPM || calibratedWPM
+    console.log(`🎤 Usando WPM calibrado: ${effectiveWPM} (voz: ${voiceModel || 'default'})`)
 
     // Normalizar región antes de usarla
     const normalizedRegion = await normalizeRegion(region)
@@ -259,8 +262,8 @@ export async function POST(request: NextRequest) {
         }
 
         return NextResponse.json({
-          error: 'No hay noticias recientes disponibles (últimas 48 horas). Por favor ejecuta el scraping primero.',
-          action: 'POST /api/scraping'
+          error: 'No hay noticias recientes disponibles (últimas 48 horas). Selecciona noticias desde "Crear Noticiero" para obtenerlas en tiempo real.',
+          action: 'Use /crear-noticiero to scrape news on-demand'
         }, { status: 404 })
       }
     }
@@ -345,25 +348,51 @@ export async function POST(request: NextRequest) {
 
     // ✅ UNIVERSAL: Verificar y limitar noticias para TODOS los métodos de selección
     // Esto aplica tanto a URLs específicas como a selección por categorías
+    // ✅ MEJORADO: Ahora considera silencios entre segmentos para cálculo preciso
     {
-      const avgSecondsPerNews = (100 / effectiveWPM) * 60  // ~40s a 150 WPM
-      const reservedTime = 30 + (adCount || 0) * 30  // Intro/outro + anuncios
-      const availableNewsTime = targetDuration - reservedTime
-      const maxNewsForDuration = Math.floor(availableNewsTime / avgSecondsPerNews)
+      const avgWordsPerNews = 100  // Palabras promedio por noticia humanizada
+      const avgSecondsPerNews = (avgWordsPerNews / effectiveWPM) * 60
 
-      console.log(`📏 === VERIFICACIÓN DE DURACIÓN ===`)
+      // Tiempo fijo reservado: intro + outro + anuncios
+      const introOutroTime = TIMING_CONSTANTS.INTRO_DURATION + TIMING_CONSTANTS.OUTRO_DURATION
+      const adsTime = (adCount || 0) * TIMING_CONSTANTS.AD_DURATION
+      const reservedTime = introOutroTime + adsTime
+
+      // Tiempo disponible para noticias
+      const availableNewsTime = targetDuration - reservedTime
+
+      // ✅ CLAVE: Contabilizar silencio entre noticias (1.5s por cada transición)
+      // Si hay N noticias, hay N-1 transiciones (silencios)
+      // Ecuación: N * secondsPerNews + (N-1) * silenceGap <= availableNewsTime
+      // Resolviendo para N: N <= (availableNewsTime + silenceGap) / (secondsPerNews + silenceGap)
+      const silenceGap = TIMING_CONSTANTS.SILENCE_BETWEEN_NEWS
+      const maxNewsForDuration = Math.floor(
+        (availableNewsTime + silenceGap) / (avgSecondsPerNews + silenceGap)
+      )
+
+      // Calcular tiempo estimado con silencios incluidos
+      const estimatedSilenceTime = Math.max(0, selectedNews.length - 1) * silenceGap
+      const estimatedNewsTime = selectedNews.length * avgSecondsPerNews
+      const totalEstimatedTime = reservedTime + estimatedNewsTime + estimatedSilenceTime
+
+      console.log(`📏 === VERIFICACIÓN DE DURACIÓN (CALIBRADA) ===`)
       console.log(`   🎯 Tiempo objetivo: ${Math.round(targetDuration / 60)} min (${targetDuration}s)`)
+      console.log(`   🎤 WPM calibrado: ${effectiveWPM}`)
+      console.log(`   ⏱️ Tiempo por noticia: ${avgSecondsPerNews.toFixed(1)}s + ${silenceGap}s silencio`)
       console.log(`   📰 Noticias seleccionadas: ${selectedNews.length}`)
       console.log(`   📊 Máximo que cabe: ${maxNewsForDuration} noticias`)
+      console.log(`   ⏳ Estimación total: ${Math.round(totalEstimatedTime)}s (${Math.round(totalEstimatedTime / 60)} min)`)
 
       if (selectedNews.length > maxNewsForDuration && maxNewsForDuration > 0) {
         console.warn(`   ⚠️ EXCESO: ${selectedNews.length - maxNewsForDuration} noticias de más`)
         console.warn(`   ✂️ Limitando a ${maxNewsForDuration} noticias para respetar duración`)
         selectedNews = selectedNews.slice(0, maxNewsForDuration)
+      } else if (totalEstimatedTime < targetDuration * 0.9) {
+        console.log(`   ⚠️ DÉFICIT: ~${Math.round(targetDuration - totalEstimatedTime)}s por llenar (se compensará con cierre extendido)`)
       } else {
         console.log(`   ✅ OK: Las noticias caben en el tiempo objetivo`)
       }
-      console.log(`   ===============================`)
+      console.log(`   =============================================`)
     }
     // ✅ MEJORA: Usar userId ya validado al inicio (evita re-validación que causa "Already Used")
     // Anteriormente llamaba a getCurrentUser() aquí, pero después de 2+ min de scraping el token expiraba

@@ -47,8 +47,37 @@ export async function GET() {
             }
         }
 
-        // Solo devolver voces clonadas (no voces genéricas del sistema TTS)
-        return NextResponse.json({ voices: userVoices })
+        // Voces del sistema VoiceMaker (siempre disponibles si hay API key)
+        // ✅ WPM calibrado considerando MasterSpeed +15 (valores sincronizados con tts-providers.ts)
+        const voicemakerVoices = process.env.VOICEMAKER_API_KEY ? [
+            {
+                id: 'ai3-es-CL-Vicente',
+                name: '🎙️ Vicente (VoiceMaker)',
+                language: 'es-CL',
+                type: 'voicemaker',
+                isUserVoice: false,
+                wpm: 175,  // Calibrado: voz masculina rápida + MasterSpeed +15
+                tempo: 4.0,
+                avg_pause_ms: 200,
+                energy_profile: 'news'
+            },
+            {
+                id: 'ai3-es-CL-Eliana',
+                name: '🎙️ Eliana (VoiceMaker)',
+                language: 'es-CL',
+                type: 'voicemaker',
+                isUserVoice: false,
+                wpm: 168,  // Calibrado: voz femenina moderada + MasterSpeed +15
+                tempo: 4.0,
+                avg_pause_ms: 250,
+                energy_profile: 'news'
+            }
+        ] : []
+
+        // Combinar voces VoiceMaker + voces clonadas del usuario
+        const allVoices = [...voicemakerVoices, ...userVoices]
+
+        return NextResponse.json({ voices: allVoices })
 
     } catch (error) {
         console.error('Error fetching voices:', error)

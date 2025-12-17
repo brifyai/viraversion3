@@ -6,7 +6,7 @@ import { getDownloadUrl } from '@/lib/s3'
 // Real síntesis de voz usando múltiples proveedores
 interface TTSRequest {
   text: string
-  provider?: 'openai' | 'elevenlabs' | 'azure' | 'polly' | 'edge' | 'auto'
+  provider?: 'voicemaker' | 'local' | 'auto'  // VoiceMaker es el principal
   voice?: string
   speed?: number
   format?: 'mp3' | 'wav' | 'ogg'
@@ -14,7 +14,10 @@ interface TTSRequest {
   stability?: number
   similarityBoost?: number
   rate?: string
-  pitch?: string
+  pitch?: number
+  // VoxFX (VoiceMaker)
+  fmRadioEffect?: boolean
+  fmRadioIntensity?: number  // 0-100
 }
 
 // Función auxiliar para mapear opciones por proveedor
@@ -98,130 +101,84 @@ export async function POST(request: NextRequest) {
     console.log(`🎙️ Iniciando síntesis de voz: ${text.length} caracteres`)
     const startTime = Date.now()
 
-    // PRIORIDAD 1: Intentar con servidor TTS local (localhost:5000)
-    try {
-      console.log('🔄 Intentando con servidor TTS local (localhost:5000)...')
+    // PRIORIDAD 1: VoiceMaker API (Cloud)
+    const voicemakerApiKey = process.env.VOICEMAKER_API_KEY;
 
-      // URL del servidor TTS local
-      const TTS_API_URL = process.env.TTS_API_URL || 'http://127.0.0.1:5000'
-      console.log(`🔌 TTS_API_URL: ${TTS_API_URL}`)
-      console.log(`🗣️ Voice requested: ${voice || 'default'}`)
+    if (voicemakerApiKey) {
+      try {
+        console.log('🔄 Usando VoiceMaker API...')
+        console.log(`🗣️ Voice requested: ${voice || 'ai3-Jony (default)'}`)
 
-      let audioBuffer: Buffer;
-      let duration = 0;
+        const { VoiceMakerTTSProvider, VOICEMAKER_VOICES } = await import('@/lib/tts-providers')
+        const voicemakerProvider = new VoiceMakerTTSProvider(voicemakerApiKey)
 
-      // DECISIÓN: Usar /tts o /tts_batch según longitud
-      if (text.length > 500) {
-        console.log(`📜 Texto largo detectado (${text.length} chars). Usando /tts_batch...`);
+        // Determinar voz a usar
+        const voiceId = voice || VOICEMAKER_VOICES.MALE_ES.id
 
-        const batchResponse = await fetch(`${TTS_API_URL}/tts_batch`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: text,
-            voice: voice || 'es-mx',
-            language: 'es',
-            max_chunk_chars: 400
-          }),
-          signal: AbortSignal.timeout(600000) // 10 min timeout para batch
-        });
-
-        if (!batchResponse.ok) {
-          throw new Error(`Batch TTS Error: ${batchResponse.statusText}`);
-        }
-
-        const batchData = await batchResponse.json();
-
-        // El servidor devuelve stitched_audio_base64 (audio ya unido)
-        if (!batchData.success || !batchData.stitched_audio_base64) {
-          console.error('❌ Respuesta batch:', JSON.stringify(batchData).slice(0, 200));
-          throw new Error('Respuesta inválida de /tts_batch');
-        }
-
-        console.log(`✅ Batch completado: ${batchData.duration}s`);
-        duration = batchData.duration || 0;
-
-        // Usar el audio ya unido (stitched)
-        audioBuffer = Buffer.from(batchData.stitched_audio_base64, 'base64');
-
-
-      } else {
-        // Texto corto: Usar /tts normal
-        const localTTSResponse = await fetch(`${TTS_API_URL}/tts`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: text,
-            voice: voice || 'es-mx',
-            format: 'base64'
-          }),
-          signal: AbortSignal.timeout(300000)
+        const result = await voicemakerProvider.synthesize(text, {
+          voiceId: voiceId,
+          languageCode: 'es-ES',
+          engine: 'neural',
+          speed: requestData.speed,
+          pitch: requestData.pitch,
+          // VoxFX FM Radio effect
+          voxFx: requestData.fmRadioEffect ? {
+            presetId: '67841788096cecfe8b18b2d1',  // FM Radio preset
+            dryWet: requestData.fmRadioIntensity || 27
+          } : undefined
         })
 
-        if (!localTTSResponse.ok) {
-          throw new Error(`TTS Error: ${localTTSResponse.statusText}`);
+        if (!result.success) {
+          throw new Error('VoiceMaker synthesis failed')
         }
 
-        const contentType = localTTSResponse.headers.get('content-type')
+        // Guardar localmente en public/generated-audio/
+        const fs = require('fs')
+        const path = require('path')
 
-        if (contentType && contentType.includes('application/json')) {
-          const data = await localTTSResponse.json()
-          if (data.audio_base64) {
-            audioBuffer = Buffer.from(data.audio_base64, 'base64')
-            duration = data.duration || 0;
-          } else {
-            throw new Error('Respuesta JSON inválida del servidor TTS local')
+        const audioDir = path.join(process.cwd(), 'public', 'generated-audio')
+        if (!fs.existsSync(audioDir)) {
+          fs.mkdirSync(audioDir, { recursive: true })
+        }
+
+        const timestamp = Date.now()
+        const fileName = `tts_${timestamp}.mp3`
+        const filePath = path.join(audioDir, fileName)
+
+        // Guardar el audio descargado
+        if (result.audioData) {
+          fs.writeFileSync(filePath, Buffer.from(result.audioData))
+        }
+
+        const audioUrl = `/generated-audio/${fileName}`
+        const processingTime = Date.now() - startTime
+
+        console.log(`✅ Audio generado exitosamente con VoiceMaker: ${processingTime}ms`)
+        console.log(`📁 Guardado en: ${filePath}`)
+
+        return NextResponse.json({
+          success: true,
+          provider: 'voicemaker',
+          voice: voiceId,
+          duration: result.duration || 0,
+          audioUrl: audioUrl,
+          voicemakerUrl: result.audioUrl,  // URL original de VoiceMaker (24h)
+          format: 'mp3',
+          metadata: {
+            textLength: text.length,
+            processingTime,
+            estimatedCost: result.cost || 0,
+            provider: 'VoiceMaker API',
+            configuredProviders: ['VoiceMaker'],
+            synthesizedAt: new Date().toISOString()
           }
-        } else {
-          const audioBlob = await localTTSResponse.blob()
-          audioBuffer = Buffer.from(await audioBlob.arrayBuffer())
-          // Estimación si no viene duración
-          const words = text.trim().split(/\s+/).length
-          duration = Math.max(5, Math.round((words / 150) * 60))
-        }
+        })
+      } catch (voicemakerError) {
+        console.error('❌ VoiceMaker Error:', voicemakerError instanceof Error ? voicemakerError.message : 'Error desconocido')
+        console.log('🔄 Intentando con proveedores alternativos...')
       }
-
-      // Guardar localmente en public/generated-audio/
-      const fs = require('fs')
-      const path = require('path')
-
-      const audioDir = path.join(process.cwd(), 'public', 'generated-audio')
-      if (!fs.existsSync(audioDir)) {
-        fs.mkdirSync(audioDir, { recursive: true })
-      }
-
-      const timestamp = Date.now()
-      // Usar .wav porque ahora siempre aseguramos formato WAV (ya sea directo o construido)
-      const fileName = `tts_${timestamp}.wav`
-      const filePath = path.join(audioDir, fileName)
-
-      fs.writeFileSync(filePath, audioBuffer)
-
-      const audioUrl = `/generated-audio/${fileName}`
-      const processingTime = Date.now() - startTime
-
-      console.log(`✅ Audio generado exitosamente con servidor local: ${processingTime}ms`)
-      console.log(`📁 Guardado en: ${filePath}`)
-
-      return NextResponse.json({
-        success: true,
-        provider: 'local-tts-server',
-        voice: voice || 'default',
-        duration: duration,
-        audioUrl: audioUrl,
-        format: 'wav', // Siempre devolvemos WAV ahora
-        metadata: {
-          textLength: text.length,
-          processingTime,
-          estimatedCost: 0,
-          provider: 'Servidor TTS Local (localhost:5000)',
-          configuredProviders: ['Local TTS Server'],
-          synthesizedAt: new Date().toISOString()
-        }
-      })
-    } catch (localError) {
-      console.warn('⚠️ Servidor TTS local no disponible:', localError instanceof Error ? localError.message : 'Error desconocido')
-      console.log('🔄 Intentando con proveedores alternativos...')
+    } else {
+      console.warn('⚠️ VOICEMAKER_API_KEY no configurada, intentando proveedores alternativos...')
     }
 
     // PRIORIDAD 2: Intentar con proveedores configurados

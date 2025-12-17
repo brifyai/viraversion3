@@ -95,12 +95,7 @@ const allNavigationItems = [
     icon: Crown,
     roles: ['super_admin'],  // Solo SUPER_ADMIN
   },
-  {
-    name: 'Panel Scraping',
-    href: '/super-admin/scraping',
-    icon: Settings,
-    roles: ['super_admin'],  // Solo SUPER_ADMIN
-  },
+
   {
     name: 'Gestión Fuentes',
     href: '/super-admin/fuentes',

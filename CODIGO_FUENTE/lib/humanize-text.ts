@@ -15,7 +15,7 @@ import { fetchWithRetry } from './utils'
 // Limpia y trunca el contenido para evitar respuestas vacías
 // ==================================================
 
-export function prepareContentForAI(text: string, maxChars: number = 4000): string {
+export function prepareContentForAI(text: string, maxChars: number = 5000): string {
     if (!text) return ''
 
     let cleaned = text
@@ -56,14 +56,42 @@ export function prepareContentForAI(text: string, maxChars: number = 4000): stri
         .replace(/[×•►▶◄◀]/g, '')
         .trim()
 
-    // 7. TRUNCAR a max caracteres (en límite de oración)
+    // 7. TRUNCAR a max caracteres (en límite de oración REAL)
+    // ✅ MEJORADO: Buscar fin de oración real (punto seguido de espacio o mayúscula)
+    // Evita cortar en decimales como "58.16%" o "0.5%"
     if (cleaned.length > maxChars) {
         const truncated = cleaned.substring(0, maxChars)
-        const lastSentence = truncated.lastIndexOf('.')
-        if (lastSentence > maxChars * 0.7) {
-            cleaned = truncated.substring(0, lastSentence + 1)
+
+        // Buscar el último punto que termina una oración real
+        // (punto seguido de espacio y mayúscula, o punto al final)
+        let lastSentenceEnd = -1
+        for (let i = truncated.length - 1; i >= maxChars * 0.6; i--) {
+            if (truncated[i] === '.') {
+                // Verificar que no es un decimal (dígito antes Y después)
+                const charBefore = i > 0 ? truncated[i - 1] : ''
+                const charAfter = i < truncated.length - 1 ? truncated[i + 1] : ''
+
+                const isDecimal = /\d/.test(charBefore) && /\d/.test(charAfter)
+                const isAbbreviation = /\d/.test(charBefore) && charAfter === '' // Ej: "2024."
+
+                if (!isDecimal && !isAbbreviation) {
+                    // Es fin de oración real
+                    lastSentenceEnd = i
+                    break
+                }
+            }
+        }
+
+        if (lastSentenceEnd > maxChars * 0.6) {
+            cleaned = truncated.substring(0, lastSentenceEnd + 1)
         } else {
-            cleaned = truncated + '...'
+            // Fallback: buscar último espacio para no cortar palabra
+            const lastSpace = truncated.lastIndexOf(' ')
+            if (lastSpace > maxChars * 0.8) {
+                cleaned = truncated.substring(0, lastSpace) + '...'
+            } else {
+                cleaned = truncated + '...'
+            }
         }
         console.log(`   ✂️ Contenido truncado: ${text.length} → ${cleaned.length} chars`)
     }
@@ -192,42 +220,55 @@ export async function humanizeText(
         const transitionPhrase = context ? getTransitionPhrase(context) : ''
         const targetWords = options?.targetWordCount || 100  // Default 100 palabras
 
-        // Prompt mejorado con énfasis en FIDELIDAD y control de longitud
-        const systemPrompt = `Eres un locutor de noticias profesional de radio chilena. Tu trabajo es reformular noticias para que suenen naturales al ser leídas en voz alta.
+        // ============================================================
+        // PROMPT MEJORADO - Estilo Noticiero Radial Chileno
+        // ============================================================
+        const systemPrompt = `Eres un locutor de noticias profesional de RADIO CHILENA, similar a Radio Cooperativa, Radio Bío-Bío o ADN Radio. Tu trabajo es reformular noticias para que suenen naturales, profesionales y fluidas al ser leídas en voz alta.
 
-⚠️ REGLA CRÍTICA - FIDELIDAD:
-- NUNCA inventes datos específicos, cifras, nombres o detalles que no estén en el contenido original
-- Mantén la precisión de los hechos reportados
+🎙️ ESTILO NOTICIERO CHILENO:
+- Tono SERIO pero CERCANO (no frío ni robótico)
+- Frases cortas y claras para facilitar la lectura
+- Ritmo pausado con puntos que permitan respirar
+- Vocabulario chileno profesional (evitar coloquialismos extremos)
 
-📏 LONGITUD OBJETIVO: Aproximadamente ${targetWords} palabras.
-- Si el contenido original es más largo: resume los puntos más importantes
-- Si el contenido original es más corto: AMPLÍA con:
-  * Contexto general del tema (sin inventar datos específicos)
-  * Implicaciones y posibles consecuencias
-  * Preguntas retóricas para el oyente
-  * Conexiones con temas de actualidad
-  * Frases de cierre reflexivas
+📊 ESTRUCTURA RECOMENDADA:
+1. GANCHO inicial: El dato más importante primero
+2. DESARROLLO: Contexto y detalles relevantes
+3. CIERRE: Implicación o reflexión breve
 
-📝 FORMATO:
-1. Usa un tono profesional pero cercano
-2. Evita jerga técnica innecesaria
-3. NO uses emojis, hashtags, ni caracteres especiales
-4. NO menciones fuentes ni autores
-5. USA español chileno cuando sea apropiado
-6. Elimina timestamps, pipes y metadata
-7. Asegúrate que el texto fluya naturalmente para TTS
-8. Incluye pausas naturales y transiciones suaves
+⚠️ REGLAS CRÍTICAS:
+- NUNCA inventes datos, cifras, nombres o detalles
+- Mantén la precisión de los hechos
+- NO uses emojis, hashtags ni caracteres especiales
+- NO menciones "según fuentes" ni autores
+- EVITA jerga técnica innecesaria
 
-IMPORTANTE: Solo devuelve el texto reformulado, sin explicaciones adicionales.`
+📏 LONGITUD: Aproximadamente ${targetWords} palabras.
+- Contenido largo → resume puntos clave
+- Contenido corto → amplía con contexto general (sin inventar)
 
-        const userPrompt = `Reformula esta noticia para radio (objetivo: ~${targetWords} palabras):
+✍️ EJEMPLOS DE ESTILO:
 
+ORIGINAL: "El presidente anunció un nuevo proyecto de ley que busca reformar el sistema de pensiones"
+REFORMULADO: "El Presidente de la República anunció hoy un importante proyecto de ley que busca transformar el sistema de pensiones en nuestro país. La iniciativa será enviada al Congreso en las próximas semanas."
+
+ORIGINAL: "Se registró un accidente en la Ruta 5 Sur que dejó 3 heridos"  
+REFORMULADO: "Un accidente de tránsito se registró esta jornada en la Ruta 5 Sur, dejando un saldo de tres personas lesionadas. Personal de Carabineros y equipos de emergencia concurrieron al lugar para atender a las víctimas."
+
+ORIGINAL: "La inflación subió 0.5% en noviembre"
+REFORMULADO: "El Índice de Precios al Consumidor registró un alza de cero coma cinco por ciento durante noviembre. Esta cifra se suma a los incrementos acumulados durante el presente año."
+
+IMPORTANTE: Devuelve SOLO el texto reformulado, sin explicaciones.`
+
+        const userPrompt = `Reformula esta noticia para RADIO CHILENA (objetivo: ~${targetWords} palabras):
+
+CONTENIDO ORIGINAL:
 "${cleanedText}"
 
-${transitionPhrase ? `Comienza con: "${transitionPhrase}"` : ''}
-Región: ${region}
+${transitionPhrase ? `COMENZAR CON: "${transitionPhrase}"` : ''}
+REGIÓN: ${region}
 
-Recuerda: SOLO usa información del texto original. NO inventes datos.`
+Recuerda: Estilo noticiero profesional chileno. USA SOLO información del texto original.`
 
         // Calcular tokens aproximados
         const inputTokens = Math.ceil((systemPrompt.length + userPrompt.length) / 4)
@@ -243,8 +284,8 @@ Recuerda: SOLO usa información del texto original. NO inventes datos.`
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: userPrompt }
                     ],
-                    max_tokens: Math.max(400, targetWords * 2),  // Ajustar max_tokens según objetivo
-                    temperature: 0.7  // ✅ Ajustado para Qwen (mejor respuestas)
+                    max_tokens: Math.max(600, targetWords * 4),  // ✅ AUMENTADO: más espacio para completar oraciones
+                    temperature: 0.5  // ✅ REDUCIDO de 0.7 a 0.5 para más consistencia
                 })
             },
             { retries: 3, backoff: 1000 }
@@ -256,14 +297,39 @@ Recuerda: SOLO usa información del texto original. NO inventes datos.`
         }
 
         const data = await response.json()
-        const humanizedContent = data.choices?.[0]?.message?.content?.trim()
+        let humanizedContent = data.choices?.[0]?.message?.content?.trim()
 
         if (!humanizedContent) {
             console.warn('⚠️ Respuesta vacía de Chutes AI. Usando fallback.')
             return fallbackHumanize(text, transitionPhrase, targetWords)
         }
 
-        // ✅ NUEVO: Verificar que la IA generó suficiente contenido
+        // ✅ NUEVO: Detectar y corregir respuestas que terminan a mitad de oración
+        const lastChar = humanizedContent.slice(-1)
+        const endsWithPunctuation = ['.', '!', '?', '"', '»'].includes(lastChar)
+
+        if (!endsWithPunctuation) {
+            console.warn(`⚠️ Respuesta de IA terminó incompleta (último char: "${lastChar}")`)
+            // Buscar la última oración completa
+            const lastSentenceEnd = Math.max(
+                humanizedContent.lastIndexOf('. '),
+                humanizedContent.lastIndexOf('." '),
+                humanizedContent.lastIndexOf('? '),
+                humanizedContent.lastIndexOf('! ')
+            )
+
+            if (lastSentenceEnd > humanizedContent.length * 0.5) {
+                // Hay suficiente contenido, truncar a la última oración completa
+                humanizedContent = humanizedContent.substring(0, lastSentenceEnd + 1)
+                console.log(`   ✂️ Recortado a última oración completa: ${humanizedContent.length} chars`)
+            } else {
+                // Agregar punto final para cerrar
+                humanizedContent += '.'
+                console.log(`   ➕ Agregado punto final`)
+            }
+        }
+
+        // ✅ Verificar que la IA generó suficiente contenido
         const generatedWordCount = humanizedContent.split(' ').length
         const minAcceptableWords = targetWords * 0.5  // Mínimo 50% del objetivo
 
