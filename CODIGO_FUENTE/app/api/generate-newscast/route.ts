@@ -217,25 +217,27 @@ export async function POST(request: NextRequest) {
       }
     } = config
 
-    // ✅ WPM ajustado según velocidad configurada
-    // Fórmula: WPM_base * (1 + speed/100)
-    // Base 175 calibrado con datos reales
-    // Con speed +13: 175 * 1.13 = 198 WPM
-    // Con speed -5: 175 * 0.95 = 166 WPM
-    const calibratedBaseWPM = 175  // WPM base calibrado con datos reales
-    const speedFactor = 1 + ((voiceSettings?.speed ?? 13) / 100)  // Default 13%
-    const adjustedWPM = Math.round(calibratedBaseWPM * speedFactor)
-    // ✅ SIEMPRE usar el WPM calculado (no el antiguo voiceWPM del config)
-    const effectiveWPM = adjustedWPM
-    console.log(`🎤 WPM: base ${calibratedBaseWPM} * speed ${speedFactor.toFixed(2)} = ${effectiveWPM}`)
+    // ✅ CALIBRACIÓN REAL - Basada en mediciones de VoiceMaker "news"
+    // El WPM teórico (175*1.13=198) no refleja la realidad del TTS
+    // Mediciones reales: audio 16.5% más largo que lo estimado
+    // WPM real medido: ~165 WPM con efecto "news" y speed +13%
+    const REAL_WPM = 165  // WPM calibrado con datos reales de producción
+
+    // ✅ MARGEN DE SEGURIDAD - "En radio pasarse es peor que quedarse corto"
+    const SAFETY_MARGIN = 0.95  // 5% de margen (antes 8% era muy agresivo)
+    const originalTargetDuration = targetDuration  // Guardar original para logs
+    targetDuration = Math.round(targetDuration * SAFETY_MARGIN)  // Aplicar margen
+
+    const effectiveWPM = REAL_WPM
+    console.log(`🎤 WPM calibrado: ${effectiveWPM} | Objetivo original: ${originalTargetDuration}s → Planificado: ${targetDuration}s (margen 8%)`)
 
     // Normalizar región antes de usarla
     const normalizedRegion = await normalizeRegion(region)
     console.log(`🌍 Región normalizada: '${region}' -> '${normalizedRegion}'`)
-    console.log(`📻 Nombre de radio recibido: '${radioName || 'NO RECIBIDO'}'`)  // ✅ DEBUG
+    console.log(`📻 Nombre de radio recibido: '${radioName || 'NO RECIBIDO'}'`)
     region = normalizedRegion // Actualizar variable local
 
-    console.log(`🎙️ Generando noticiero para ${region} (${targetDuration}s)`)
+    console.log(`🎙️ Generando noticiero para ${region} (${targetDuration}s planificados)`)
     console.log(`📋 Categorías solicitadas:`, categories)
 
     // Si viene plantilla_id, cargar configuración

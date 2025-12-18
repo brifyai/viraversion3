@@ -861,6 +861,7 @@ export default function CrearNoticiero() {
                   onDurationChange={setDuration}
                   min={5}
                   max={60}
+                  selectedNewsCount={selectedNewsUrls.length}
                 />
 
               </CardContent>
