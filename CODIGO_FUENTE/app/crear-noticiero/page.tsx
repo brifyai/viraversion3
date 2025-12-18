@@ -74,7 +74,7 @@ export default function CrearNoticiero() {
   const [loadingStats, setLoadingStats] = useState(false)
   const [duration, setDuration] = useState(15)
   const [adCount, setAdCount] = useState(3)
-  const [generateAudio, setGenerateAudio] = useState(false)
+  const [generateAudio, setGenerateAudio] = useState(false)  // Toggle para generar audio en finalize
   const [selectedVoice, setSelectedVoice] = useState('es-mx')
   const [voiceConfig, setVoiceConfig] = useState<VoiceConfigSettings>(defaultVoiceConfig)
   const [timeStrategy, setTimeStrategy] = useState('auto')
@@ -549,7 +549,7 @@ export default function CrearNoticiero() {
       categoryConfig,
       specificNewsUrls: selectedNewsUrls, // Enviar URLs específicas
       targetDuration: duration * 60,
-      generateAudioNow: generateAudio,
+      // generateAudioNow ya no se usa - audio siempre se genera
       adCount: adCount,
       includeTimeWeather: includeWeather,
       timeStrategy: timeStrategy,
@@ -963,20 +963,16 @@ export default function CrearNoticiero() {
                   </div>
 
                   <div className="border-t pt-4">
-                    <p className="font-medium text-gray-900">Generar Audio Ahora</p>
-                    <p className="text-sm text-gray-500">
-                      Genera el audio TTS inmediatamente (tarda más)
-                    </p>
+                    <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <span className="text-green-600">✓</span>
+                      <div>
+                        <p className="font-medium text-gray-900">Duración con Compensación</p>
+                        <p className="text-sm text-gray-600">
+                          El sistema ajusta automáticamente cada noticia para cumplir el tiempo objetivo.
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={generateAudio}
-                      onChange={(e) => setGenerateAudio(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
                 </div>
               </CardContent>
             </Card>
@@ -1069,7 +1065,7 @@ export default function CrearNoticiero() {
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Audio:</span>
                   <span className="font-medium">
-                    {generateAudio ? 'Sí' : 'No'}
+                    Genera en Finalizar
                   </span>
                 </div>
               </CardContent>

@@ -14,7 +14,7 @@ export const VOICEMAKER_VOICES = {
     name: 'Vicente (Masculino)',
     engine: 'neural',
     language: 'es-CL',
-    wpm: 175,  // Calibrado: voz rápida + MasterSpeed +15
+    wpm: 201,  // Calibrado con datos reales (antes 175, estimaciones 17% muy largas)
     avgPauseMs: 200  // Pausa promedio entre frases
   },
   // Voz femenina principal - Eliana es ligeramente más pausada
@@ -23,7 +23,7 @@ export const VOICEMAKER_VOICES = {
     name: 'Eliana (Femenino)',
     engine: 'neural',
     language: 'es-CL',
-    wpm: 168,  // Calibrado: ritmo moderado + MasterSpeed +15
+    wpm: 195,  // Calibrado con datos reales (antes 168, estimaciones 17% muy largas)
     avgPauseMs: 250  // Pausa promedio entre frases
   },
   // Aliases para compatibilidad
@@ -32,7 +32,7 @@ export const VOICEMAKER_VOICES = {
     name: 'Vicente (Masculino)',
     engine: 'neural',
     language: 'es-CL',
-    wpm: 175,
+    wpm: 201,
     avgPauseMs: 200
   },
   FEMALE_ES: {
@@ -40,7 +40,7 @@ export const VOICEMAKER_VOICES = {
     name: 'Eliana (Femenino)',
     engine: 'neural',
     language: 'es-CL',
-    wpm: 168,
+    wpm: 195,
     avgPauseMs: 250
   }
 };
@@ -48,7 +48,7 @@ export const VOICEMAKER_VOICES = {
 // Helper para obtener WPM calibrado de una voz
 export function getCalibratedWPM(voiceId: string): number {
   const voiceEntry = Object.values(VOICEMAKER_VOICES).find(v => v.id === voiceId);
-  return voiceEntry?.wpm || 170;  // Default calibrado para VoiceMaker con Speed +15
+  return voiceEntry?.wpm || 198;  // Default calibrado para VoiceMaker (datos reales)
 }
 
 // Constantes de timing para cálculos precisos
@@ -95,9 +95,9 @@ export class VoiceMakerTTSProvider implements TTSProvider {
         Text: normalizedText,
         OutputFormat: 'mp3',
         SampleRate: '48000',
-        MasterSpeed: String(options?.speed ?? 15),  // +15 = Un poco más rápido (rango: -100 a +100)
-        MasterPitch: String(options?.pitch ?? -5),  // -5 = Tono ligeramente más grave (más profesional)
-        MasterVolume: String(options?.volume || 0),
+        MasterSpeed: String(options?.speed ?? 13),  // +13% más rápido (default)
+        MasterPitch: String(options?.pitch ?? 0),   // Tono natural (antes -5)
+        MasterVolume: String(options?.volume ?? 2), // +2dB volumen (default)
         Effect: options?.effect || 'news',          // Estilo noticiero
         ResponseType: 'file',  // Returns URL
         FileStore: 24  // Keep file for 24 hours

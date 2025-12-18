@@ -9,12 +9,13 @@ interface TTSRequest {
   provider?: 'voicemaker' | 'local' | 'auto'  // VoiceMaker es el principal
   voice?: string
   speed?: number
+  pitch?: number
+  volume?: number  // ✅ NUEVO: Volumen en dB (VoiceMaker)
   format?: 'mp3' | 'wav' | 'ogg'
   // Opciones específicas por proveedor
   stability?: number
   similarityBoost?: number
   rate?: string
-  pitch?: number
   // VoxFX (VoiceMaker)
   fmRadioEffect?: boolean
   fmRadioIntensity?: number  // 0-100
@@ -121,6 +122,7 @@ export async function POST(request: NextRequest) {
           engine: 'neural',
           speed: requestData.speed,
           pitch: requestData.pitch,
+          volume: requestData.volume,  // ✅ NUEVO
           // VoxFX FM Radio effect
           voxFx: requestData.fmRadioEffect ? {
             presetId: '67841788096cecfe8b18b2d1',  // FM Radio preset

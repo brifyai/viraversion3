@@ -9,6 +9,7 @@ import { Settings2, Zap, Radio } from 'lucide-react'
 export interface VoiceConfigSettings {
   speed: number      // -50 a +50
   pitch: number      // -30 a +30
+  volume: number     // -10 a +10 (dB)
   fmRadioEffect: boolean
   fmRadioIntensity: number  // 0-100
 }
@@ -30,6 +31,10 @@ export function VoiceConfig({ settings, onChange, disabled }: VoiceConfigProps) 
 
   const handleFmToggle = (enabled: boolean) => {
     onChange({ ...settings, fmRadioEffect: enabled })
+  }
+
+  const handleVolumeChange = (value: number[]) => {
+    onChange({ ...settings, volume: value[0] })
   }
 
   const handleFmIntensityChange = (value: number[]) => {
@@ -94,6 +99,30 @@ export function VoiceConfig({ settings, onChange, disabled }: VoiceConfigProps) 
         </div>
       </div>
 
+      {/* Volumen */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-sm">Volumen</Label>
+          <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded">
+            {settings.volume > 0 ? '+' : ''}{settings.volume}dB
+          </span>
+        </div>
+        <Slider
+          value={[settings.volume]}
+          onValueChange={handleVolumeChange}
+          min={-10}
+          max={10}
+          step={1}
+          disabled={disabled}
+          className="w-full"
+        />
+        <div className="flex justify-between text-[10px] text-gray-400">
+          <span>Más bajo</span>
+          <span>Normal</span>
+          <span>Más alto</span>
+        </div>
+      </div>
+
       {/* Efecto FM Radio */}
       <div className="space-y-3 pt-2 border-t">
         <div className="flex items-center justify-between">
@@ -135,10 +164,11 @@ export function VoiceConfig({ settings, onChange, disabled }: VoiceConfigProps) 
   )
 }
 
-// Default settings
+// Default settings - Basados en recomendación de VoiceMaker
 export const defaultVoiceConfig: VoiceConfigSettings = {
-  speed: 15,      // +15 = un poco más rápido (noticiero)
-  pitch: -5,      // -5 = ligeramente más grave (profesional)
+  speed: 13,      // +13% más rápido (noticiero)
+  pitch: 0,       // Tono natural
+  volume: 2,      // +2dB de volumen
   fmRadioEffect: false,
   fmRadioIntensity: 27
 }

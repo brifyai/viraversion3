@@ -73,6 +73,7 @@ async function getNewsFromDB(region: string, limit: number = 20, maxHoursOld: nu
 interface VoiceSettings {
   speed?: number
   pitch?: number
+  volume?: number  // ✅ NUEVO: Volumen en dB
   fmRadioEffect?: boolean
   fmRadioIntensity?: number
 }
@@ -90,9 +91,10 @@ async function generateAudio(
         text,
         provider: 'auto',
         voice,
-        // ✅ NUEVO: Pasar configuración de voz al TTS
-        speed: voiceSettings?.speed ?? 15,
-        pitch: voiceSettings?.pitch ?? -5,
+        // ✅ Pasar configuración de voz al TTS (defaults: speed 13, pitch 0, volume 2)
+        speed: voiceSettings?.speed ?? 13,
+        pitch: voiceSettings?.pitch ?? 0,
+        volume: voiceSettings?.volume ?? 2,  // ✅ NUEVO
         fmRadioEffect: voiceSettings?.fmRadioEffect ?? false,
         fmRadioIntensity: voiceSettings?.fmRadioIntensity ?? 27
       })
@@ -204,24 +206,28 @@ export async function POST(request: NextRequest) {
         background_music_url: null,
         background_music_volume: 0.2
       },
-      // ✅ NUEVO: Configuración de voz (speed, pitch, fmRadio)
+      // ✅ Configuración de voz (speed, pitch, volume, fmRadio)
+      // Defaults basados en recomendación de VoiceMaker
       voiceSettings = {
-        speed: 15,
-        pitch: -5,
+        speed: 13,     // 13% más rápido (antes 15)
+        pitch: 0,      // Tono natural (antes -5)
+        volume: 2,     // +2dB de volumen (nuevo)
         fmRadioEffect: false,
         fmRadioIntensity: 27
       }
     } = config
 
-    // ✅ MEJORA: Usar WPM ajustado según velocidad configurada
+    // ✅ WPM ajustado según velocidad configurada
     // Fórmula: WPM_base * (1 + speed/100)
-    // Con speed +15 (default): 150 * 1.15 = 172 WPM
-    // Con speed -5: 150 * 0.95 = 142 WPM
-    const calibratedBaseWPM = 150  // WPM base sin ajuste de velocidad
-    const speedFactor = 1 + ((voiceSettings?.speed ?? 15) / 100)
+    // Base 175 calibrado con datos reales
+    // Con speed +13: 175 * 1.13 = 198 WPM
+    // Con speed -5: 175 * 0.95 = 166 WPM
+    const calibratedBaseWPM = 175  // WPM base calibrado con datos reales
+    const speedFactor = 1 + ((voiceSettings?.speed ?? 13) / 100)  // Default 13%
     const adjustedWPM = Math.round(calibratedBaseWPM * speedFactor)
-    const effectiveWPM = voiceWPM || adjustedWPM
-    console.log(`🎤 WPM: base ${calibratedBaseWPM} * speed ${speedFactor.toFixed(2)} = ${adjustedWPM} (usando: ${effectiveWPM})`)
+    // ✅ SIEMPRE usar el WPM calculado (no el antiguo voiceWPM del config)
+    const effectiveWPM = adjustedWPM
+    console.log(`🎤 WPM: base ${calibratedBaseWPM} * speed ${speedFactor.toFixed(2)} = ${effectiveWPM}`)
 
     // Normalizar región antes de usarla
     const normalizedRegion = await normalizeRegion(region)
@@ -642,16 +648,7 @@ export async function POST(request: NextRequest) {
       voiceId: voiceModel || 'default'
     }
 
-    // Generar audio de intro si se solicita
-    if (generateAudioNow) {
-      console.log('🎤 Generando audio de intro...')
-      const introAudio = await generateAudio(introText, voiceModel, voiceSettings)
-      if (introAudio) {
-        introItem.audioUrl = introAudio.audioUrl
-        introItem.s3Key = introAudio.s3Key
-        introItem.duration = introAudio.duration
-      }
-    }
+    // Audio de intro se genera en finalize-newscast
 
     timeline.push(introItem)
     currentDuration += introItem.duration
@@ -764,46 +761,44 @@ export async function POST(request: NextRequest) {
       totalTokens += humanizedResult.tokensUsed
       totalCost += humanizedResult.cost
 
-      // Estimar duración usando el WPM real de la voz seleccionada
       const wordCount = finalContent.split(' ').length
+
+      // ✅ Estimar duración usando WPM (audio se genera después en finalize)
       const estimatedDuration = Math.ceil((wordCount / effectiveWPM) * 60)
 
-      // ✅ MEJORA: Calcular déficit para compensar en siguiente noticia
+      // ✅ Calcular déficit para compensar en siguiente noticia
       const duracionObjetivo = news.segundos_asignados || Math.round(palabrasConCompensacion / effectiveWPM * 60)
-      if (estimatedDuration < duracionObjetivo * 0.8) {
-        deficitAcumulado += (duracionObjetivo - estimatedDuration)
-        console.log(`   ⚠️ Déficit: ${Math.round(duracionObjetivo - estimatedDuration)}s → Compensando en siguiente`)
+      const diferencia = duracionObjetivo - estimatedDuration
+
+      if (Math.abs(diferencia) > 5) {  // Solo si la diferencia es significativa (>5s)
+        deficitAcumulado += diferencia
+        if (diferencia > 0) {
+          console.log(`   ⚠️ Déficit: ${Math.round(diferencia)}s → Compensando en siguiente noticia`)
+        } else {
+          console.log(`   📈 Superávit: ${Math.round(-diferencia)}s → Reduciendo siguiente noticia`)
+        }
       } else {
-        deficitAcumulado = 0 // Resetear si esta noticia cumplió
+        // Si está muy cercano al objetivo, reducir gradualmente el déficit acumulado
+        deficitAcumulado = Math.round(deficitAcumulado * 0.5)
       }
 
-      console.log(`   📊 Palabras generadas: ${wordCount} | Duración: ${Math.round(estimatedDuration)}s`)
+      console.log(`   📊 Palabras: ${wordCount} | Duración estimada: ${Math.round(estimatedDuration)}s | Objetivo: ${duracionObjetivo}s`)
 
       const newsItem: any = {
         id: news.id,
         type: 'news',
         title: news.titulo,
         originalContent: news.contenido,
-        content: finalContent,  // ✅ Contenido con transiciones integradas
-        duration: estimatedDuration,
+        content: finalContent,
+        duration: estimatedDuration,  // Estimación (se actualiza con duración real en finalize)
         source: news.fuente,
         category: news.categoria,
         isHumanized: true,
         newsId: news.id,
         voiceId: voiceModel || 'default',
-        hasTransition: !!transitions.preText,  // Indicador para UI
-        hasComment: !!transitions.postText     // Indicador para UI
-      }
-
-      // Generar audio de noticia si se solicita
-      if (generateAudioNow) {
-        console.log(`🎤 Generando audio de noticia ${i + 1}...`)
-        const newsAudio = await generateAudio(humanizedResult.content, voiceModel, voiceSettings)
-        if (newsAudio) {
-          newsItem.audioUrl = newsAudio.audioUrl
-          newsItem.s3Key = newsAudio.s3Key
-          newsItem.duration = newsAudio.duration
-        }
+        hasTransition: !!transitions.preText,
+        hasComment: !!transitions.postText
+        // Audio se genera en finalize-newscast
       }
 
       timeline.push(newsItem)
@@ -982,15 +977,7 @@ NO uses emojis ni caracteres especiales.`
         voiceId: voiceModel || 'default'
       }
 
-      if (generateAudioNow) {
-        console.log('🎤 Generando audio de cierre extendido...')
-        const cierreAudio = await generateAudio(cierreExtendido, voiceModel, voiceSettings)
-        if (cierreAudio) {
-          cierreItem.audioUrl = cierreAudio.audioUrl
-          cierreItem.s3Key = cierreAudio.s3Key
-          cierreItem.duration = cierreAudio.duration
-        }
-      }
+      // Audio de cierre se genera en finalize-newscast
 
       timeline.push(cierreItem)
       currentDuration += cierreItem.duration
@@ -1012,16 +999,7 @@ NO uses emojis ni caracteres especiales.`
       voiceId: voiceModel || 'default'
     }
 
-    // Generar audio de outro si se solicita
-    if (generateAudioNow) {
-      console.log('🎤 Generando audio de outro...')
-      const outroAudio = await generateAudio(outroText, voiceModel, voiceSettings)
-      if (outroAudio) {
-        outroItem.audioUrl = outroAudio.audioUrl
-        outroItem.s3Key = outroAudio.s3Key
-        outroItem.duration = outroAudio.duration
-      }
-    }
+    // Audio de outro se genera en finalize-newscast
 
     timeline.push(outroItem)
 
@@ -1033,7 +1011,7 @@ NO uses emojis ni caracteres especiales.`
         contenido: timeline.map(t => t.content).join('\n\n'),
         datos_timeline: timeline,
         duracion_segundos: currentDuration,
-        estado: generateAudioNow ? 'procesando' : 'generado',
+        estado: 'generado',  // Audio se genera en finalize-newscast
         region: region, // Guardar región normalizada
         user_id: userId,
         costo_generacion: totalCost,
