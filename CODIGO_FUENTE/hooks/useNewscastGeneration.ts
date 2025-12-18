@@ -15,6 +15,14 @@ interface NewscastConfig {
     newsTime?: string
     voiceModel?: string
     voiceWPM?: number // Palabras por minuto de la voz para cálculo preciso
+    // ✅ NUEVO: Configuración de voz para TTS
+    voiceSettings?: {
+        speed?: number      // Velocidad (ej: 13 para +13%)
+        pitch?: number      // Tono (ej: 0)
+        volume?: number     // Volumen en dB (ej: 2)
+        fmRadioEffect?: boolean
+        fmRadioIntensity?: number
+    }
     timeStrategy?: string
     hora_generacion?: string  // ✅ NUEVO: Hora programada para el noticiero
     userId?: string // ✅ NUEVO: userId para fallback cuando sesión expira
@@ -86,6 +94,7 @@ export function useNewscastGeneration() {
                     }),
                     voiceModel: config.voiceModel || 'default',
                     voiceWPM: config.voiceWPM || 150, // WPM para cálculo de duración
+                    voiceSettings: config.voiceSettings, // ✅ NUEVO: Pasar configuración de voz
                     timeStrategy: config.timeStrategy || 'auto',
                     hora_generacion: config.hora_generacion,  // ✅ NUEVO: Hora programada
                     audioConfig: config.audioConfig,

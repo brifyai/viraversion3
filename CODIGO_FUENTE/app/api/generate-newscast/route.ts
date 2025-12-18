@@ -217,19 +217,21 @@ export async function POST(request: NextRequest) {
       }
     } = config
 
-    // ✅ CALIBRACIÓN REAL - Basada en mediciones de VoiceMaker "news"
-    // El WPM teórico (175*1.13=198) no refleja la realidad del TTS
-    // Mediciones reales: audio 16.5% más largo que lo estimado
-    // WPM real medido: ~165 WPM con efecto "news" y speed +13%
-    const REAL_WPM = 165  // WPM calibrado con datos reales de producción
+    // ✅ WPM ADAPTATIVO - Basado en voz seleccionada y velocidad
+    // Fórmula: voiceBaseWPM * (1 + speed/100) * CORRECTION_FACTOR
+    // CORRECTION_FACTOR compensa la diferencia entre WPM teórico y real del TTS
+    // Test 12/18: Con 0.92 audio fue 94% del estimado → ajustar a 0.97
+    const CORRECTION_FACTOR = 0.97
+    const voiceBaseWPM = voiceWPM || 150  // WPM base de la voz (desde metadata)
+    const speedAdjustment = 1 + ((voiceSettings?.speed ?? 13) / 100)  // Ajuste por velocidad
+    const effectiveWPM = Math.round(voiceBaseWPM * speedAdjustment * CORRECTION_FACTOR)
 
     // ✅ MARGEN DE SEGURIDAD - "En radio pasarse es peor que quedarse corto"
-    const SAFETY_MARGIN = 0.95  // 5% de margen (antes 8% era muy agresivo)
+    const SAFETY_MARGIN = 0.95  // 5% de margen
     const originalTargetDuration = targetDuration  // Guardar original para logs
     targetDuration = Math.round(targetDuration * SAFETY_MARGIN)  // Aplicar margen
 
-    const effectiveWPM = REAL_WPM
-    console.log(`🎤 WPM calibrado: ${effectiveWPM} | Objetivo original: ${originalTargetDuration}s → Planificado: ${targetDuration}s (margen 8%)`)
+    console.log(`🎤 WPM: base ${voiceBaseWPM} × speed ${speedAdjustment.toFixed(2)} × factor ${CORRECTION_FACTOR} = ${effectiveWPM} | Objetivo: ${originalTargetDuration}s → ${targetDuration}s (margen 5%)`)
 
     // Normalizar región antes de usarla
     const normalizedRegion = await normalizeRegion(region)

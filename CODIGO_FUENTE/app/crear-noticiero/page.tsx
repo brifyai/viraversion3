@@ -104,6 +104,14 @@ export default function CrearNoticiero() {
   // Estado de pre-procesamiento
   const [isPreProcessing, setIsPreProcessing] = useState(false)
 
+  // Estado para alertas de scraping (noticias perdidas)
+  const [scrapingAlert, setScrapingAlert] = useState<{
+    total: number
+    exitosos: number
+    fallidos: number
+    errores: string[]
+  } | null>(null)
+
   // Selección de fuentes (incluye region para indicador visual)
   const [availableSources, setAvailableSources] = useState<{ id: string, nombre_fuente: string, url: string, region: string }[]>([])
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
@@ -531,7 +539,20 @@ export default function CrearNoticiero() {
           if (!scrapeRes.ok) {
             console.warn('Advertencia en scraping automático')
           } else {
+            const scrapeData = await scrapeRes.json()
             console.log('✅ Scraping automático completado')
+
+            // Mostrar alerta si hubo noticias fallidas
+            if (scrapeData.noticias_fallidas > 0) {
+              setScrapingAlert({
+                total: newsToScrape.length,
+                exitosos: scrapeData.noticias_procesadas,
+                fallidos: scrapeData.noticias_fallidas,
+                errores: scrapeData.errores || []
+              })
+            } else {
+              setScrapingAlert(null)
+            }
           }
         }
       } catch (e) {
@@ -563,6 +584,7 @@ export default function CrearNoticiero() {
       voiceSettings: {
         speed: voiceConfig.speed,
         pitch: voiceConfig.pitch,
+        volume: voiceConfig.volume,
         fmRadioEffect: voiceConfig.fmRadioEffect,
         fmRadioIntensity: voiceConfig.fmRadioIntensity
       },
@@ -850,6 +872,42 @@ export default function CrearNoticiero() {
               </CardContent>
             </Card>
 
+            {/* Alerta de Scraping Fallido */}
+            {scrapingAlert && scrapingAlert.fallidos > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <div className="flex items-start">
+                  <span className="text-amber-600 mr-3">⚠️</span>
+                  <div className="flex-1">
+                    <p className="font-medium text-amber-800">
+                      {scrapingAlert.exitosos}/{scrapingAlert.total} noticias procesadas
+                    </p>
+                    <p className="text-sm text-amber-700 mt-1">
+                      {scrapingAlert.fallidos} noticia(s) no pudieron ser scrapeadas y no se incluirán en el noticiero.
+                    </p>
+                    {scrapingAlert.errores.length > 0 && (
+                      <details className="mt-2">
+                        <summary className="text-xs text-amber-600 cursor-pointer">Ver detalles</summary>
+                        <ul className="text-xs text-amber-600 mt-1 space-y-1">
+                          {scrapingAlert.errores.slice(0, 3).map((err, i) => (
+                            <li key={i}>• {err}</li>
+                          ))}
+                          {scrapingAlert.errores.length > 3 && (
+                            <li>...y {scrapingAlert.errores.length - 3} más</li>
+                          )}
+                        </ul>
+                      </details>
+                    )}
+                    <button
+                      onClick={() => setScrapingAlert(null)}
+                      className="text-xs text-amber-600 underline mt-2"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 4. Duración y Estimación */}
             <Card>
               <CardHeader>
@@ -861,7 +919,7 @@ export default function CrearNoticiero() {
                   onDurationChange={setDuration}
                   min={5}
                   max={60}
-                  selectedNewsCount={selectedNewsUrls.length}
+                  selectedNewsCount={totalNewsSelected}
                 />
 
               </CardContent>

@@ -123,8 +123,17 @@ export async function POST(request: NextRequest) {
     const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
     // Extract global voice preference from metadata
-    const globalVoiceId = noticiero.metadata?.config?.voiceModel || noticiero.metadata?.voiceModel || 'default';
+    const globalVoiceId = noticiero.metadata?.config?.voiceModel || noticiero.metadata?.voiceModel || noticiero.metadata?.voice_model || 'default';
+    // ✅ NUEVO: Obtener configuración de voz desde metadata
+    const globalVoiceSettings = noticiero.metadata?.voice_settings || noticiero.metadata?.config?.voiceSettings || {
+      speed: 13,      // Default VoiceMaker
+      pitch: 0,
+      volume: 2,
+      fmRadioEffect: false,
+      fmRadioIntensity: 27
+    };
     console.log(`🔍 Global Voice ID from metadata: ${globalVoiceId}`);
+    console.log(`🔍 Voice Settings: speed=${globalVoiceSettings.speed}, pitch=${globalVoiceSettings.pitch}, volume=${globalVoiceSettings.volume}`);
 
     for (const item of itemsToProcess) {
       if (!item.audioUrl && item.content) {
@@ -152,7 +161,12 @@ export async function POST(request: NextRequest) {
                 voice: targetVoiceId,
                 language: 'es',
                 format: 'base64',
-                speed: item.speed || 1.0
+                // ✅ CORREGIDO: Pasar todas las configuraciones de voz desde metadata
+                speed: globalVoiceSettings.speed ?? 13,
+                pitch: globalVoiceSettings.pitch ?? 0,
+                volume: globalVoiceSettings.volume ?? 2,
+                fmRadioEffect: globalVoiceSettings.fmRadioEffect ?? false,
+                fmRadioIntensity: globalVoiceSettings.fmRadioIntensity ?? 27
               })
             });
 
