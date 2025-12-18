@@ -56,7 +56,7 @@ export async function GET() {
                 language: 'es-CL',
                 type: 'voicemaker',
                 isUserVoice: false,
-                wpm: 175,  // Calibrado: voz masculina rápida + MasterSpeed +15
+                wpm: 175,  // WPM base antes de ajuste de velocidad
                 tempo: 4.0,
                 avg_pause_ms: 200,
                 energy_profile: 'news'
@@ -67,7 +67,7 @@ export async function GET() {
                 language: 'es-CL',
                 type: 'voicemaker',
                 isUserVoice: false,
-                wpm: 168,  // Calibrado: voz femenina moderada + MasterSpeed +15
+                wpm: 162,  // Calibrado intermedio (155=corto, 168=largo)
                 tempo: 4.0,
                 avg_pause_ms: 250,
                 energy_profile: 'news'

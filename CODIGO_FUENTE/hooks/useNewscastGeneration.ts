@@ -120,8 +120,27 @@ export function useNewscastGeneration() {
                 setStatus('¡Noticiero generado exitosamente!')
 
                 // Guardar en localStorage para acceso rápido
+                // ✅ Limpiar entradas antiguas primero para evitar quota exceeded
                 if (data.timeline) {
-                    localStorage.setItem(`newscast_${data.newscastId}`, JSON.stringify(data))
+                    try {
+                        // Eliminar noticieros viejos (mantener solo los últimos 3)
+                        const keys = Object.keys(localStorage).filter(k => k.startsWith('newscast_'))
+                        if (keys.length > 3) {
+                            keys.slice(0, keys.length - 3).forEach(k => localStorage.removeItem(k))
+                        }
+                        localStorage.setItem(`newscast_${data.newscastId}`, JSON.stringify(data))
+                    } catch (e) {
+                        // Si aún falla, limpiar todo y reintentar
+                        console.warn('localStorage lleno, limpiando cache...')
+                        Object.keys(localStorage)
+                            .filter(k => k.startsWith('newscast_'))
+                            .forEach(k => localStorage.removeItem(k))
+                        try {
+                            localStorage.setItem(`newscast_${data.newscastId}`, JSON.stringify(data))
+                        } catch (e2) {
+                            console.error('No se pudo guardar en localStorage:', e2)
+                        }
+                    }
                 }
 
                 return {
