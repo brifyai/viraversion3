@@ -1,6 +1,8 @@
 
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Navigation } from '@/components/navigation'
@@ -47,9 +49,9 @@ function PaymentPendingContent() {
         }
 
         setPaymentDetails(details)
-        
+
         console.log('Pago pendiente:', details)
-        
+
       } catch (err) {
         setError('Error al procesar los detalles del pago')
         console.error('Error:', err)
@@ -63,16 +65,16 @@ function PaymentPendingContent() {
 
   const checkPaymentStatus = async () => {
     if (!paymentDetails?.payment_id) return
-    
+
     setLoading(true)
     try {
       // Aquí podrías implementar una consulta al estado del pago
       // Por ahora simularemos una consulta
       await new Promise(resolve => setTimeout(resolve, 2000))
-      
+
       // Recargar la página para verificar el estado
       window.location.reload()
-      
+
     } catch (error) {
       console.error('Error al verificar estado del pago:', error)
     } finally {
@@ -138,7 +140,7 @@ function PaymentPendingContent() {
                 Tu pago está siendo procesado
               </p>
             </CardHeader>
-            
+
             <CardContent className="p-6">
               {paymentDetails && (
                 <div className="space-y-4 mb-6">
@@ -179,17 +181,17 @@ function PaymentPendingContent() {
                   <div>
                     <h4 className="font-medium text-yellow-800 mb-1">¿Qué significa esto?</h4>
                     <p className="text-sm text-yellow-700">
-                      Tu pago está siendo procesado por el banco o medio de pago seleccionado. 
+                      Tu pago está siendo procesado por el banco o medio de pago seleccionado.
                       Esto puede tomar algunos minutos o hasta 24 horas dependiendo del método de pago utilizado.
                     </p>
                   </div>
                 </div>
               </div>
-              
+
               <div className="space-y-3">
-                <Button 
+                <Button
                   onClick={checkPaymentStatus}
-                  variant="outline" 
+                  variant="outline"
                   className="w-full"
                   disabled={loading}
                 >
@@ -200,17 +202,17 @@ function PaymentPendingContent() {
                   )}
                   Verificar Estado
                 </Button>
-                
-                <Button 
+
+                <Button
                   onClick={() => router.push('/dashboard')}
                   className="w-full bg-yellow-600 hover:bg-yellow-700"
                 >
                   Ir al Dashboard
                 </Button>
-                
-                <Button 
+
+                <Button
                   onClick={() => router.push('/pagos')}
-                  variant="ghost" 
+                  variant="ghost"
                   className="w-full"
                 >
                   <ArrowLeft className="mr-2 h-4 w-4" />

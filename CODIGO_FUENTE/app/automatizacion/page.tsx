@@ -1,6 +1,8 @@
 ﻿
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { toast } from 'react-toastify'
 
 import { useState, useEffect } from 'react'
@@ -483,9 +485,9 @@ export default function AutomatizacionPage() {
           proxima_ejecucion: nextRun.toISOString(), // ✅ FECHA ISO
           configuracion: {
             plantilla_id: selectedTemplate,
-            region: templateData.region, // ✅ Guardar región explícitamente
-            categories: templateData.categorias, // ✅ Guardar categorías explícitamente
-            voiceModel: templateData.voz_id, // ✅ Guardar modelo de voz explícitamente
+            region: templateData?.region, // ✅ Guardar región explícitamente
+            categories: templateData?.categorias, // ✅ Guardar categorías explícitamente
+            voiceModel: templateData?.voz_id, // ✅ Guardar modelo de voz explícitamente
             frecuencia: frequencyDisplay,
             hora_generacion: generationTime,
             email: emailDestination,

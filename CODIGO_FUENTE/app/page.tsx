@@ -1,5 +1,7 @@
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { Navigation } from '@/components/navigation'
 import { DashboardByRole } from '@/components/dashboard/dashboard-by-role'
 import { useSupabaseUser } from '@/hooks/use-supabase-user'

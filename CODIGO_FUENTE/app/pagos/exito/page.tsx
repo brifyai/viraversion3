@@ -1,6 +1,8 @@
 
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Navigation } from '@/components/navigation'
@@ -47,13 +49,13 @@ function PaymentSuccessContent() {
         }
 
         setPaymentDetails(details)
-        
+
         // Verificar el estado del pago
         if (details.collection_status === 'approved' || details.status === 'approved') {
           // Pago exitoso - aquí podrías llamar a tu API para actualizar la suscripción
           console.log('Pago aprobado:', details)
         }
-        
+
       } catch (err) {
         setError('Error al procesar los detalles del pago')
         console.error('Error:', err)
@@ -133,7 +135,7 @@ function PaymentSuccessContent() {
                 Tu pago ha sido procesado correctamente
               </p>
             </CardHeader>
-            
+
             <CardContent className="p-6">
               {paymentDetails && (
                 <div className="space-y-4 mb-6">
@@ -167,27 +169,27 @@ function PaymentSuccessContent() {
                   </div>
                 </div>
               )}
-              
+
               <div className="space-y-3">
-                <Button 
+                <Button
                   onClick={handleDownloadReceipt}
-                  variant="outline" 
+                  variant="outline"
                   className="w-full"
                 >
                   <Download className="mr-2 h-4 w-4" />
                   Descargar Comprobante
                 </Button>
-                
-                <Button 
+
+                <Button
                   onClick={handleContinue}
                   className="w-full bg-green-600 hover:bg-green-700"
                 >
                   Ir al Dashboard
                 </Button>
-                
-                <Button 
+
+                <Button
                   onClick={() => router.push('/pagos')}
-                  variant="ghost" 
+                  variant="ghost"
                   className="w-full"
                 >
                   <ArrowLeft className="mr-2 h-4 w-4" />

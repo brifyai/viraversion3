@@ -1,6 +1,8 @@
 
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Navigation } from '@/components/navigation'
@@ -15,20 +17,20 @@ function PaymentErrorContent() {
 
   useEffect(() => {
     const details: Record<string, string> = {}
-    
+
     // Capturar todos los parámetros de la URL
     for (const [key, value] of searchParams.entries()) {
       details[key] = value
     }
-    
+
     setErrorDetails(details)
-    
+
     console.log('Detalles del error de pago:', details)
   }, [searchParams])
 
   const getErrorMessage = () => {
     const status = errorDetails.collection_status || errorDetails.status
-    
+
     switch (status) {
       case 'rejected':
         return 'El pago fue rechazado. Verifica los datos de tu tarjeta e intenta nuevamente.'
@@ -66,7 +68,7 @@ function PaymentErrorContent() {
                 {getErrorMessage()}
               </p>
             </CardHeader>
-            
+
             <CardContent className="p-6">
               {Object.keys(errorDetails).length > 0 && (
                 <div className="bg-gray-50 rounded-lg p-4 mb-6 space-y-2">
@@ -97,19 +99,19 @@ function PaymentErrorContent() {
                   )}
                 </div>
               )}
-              
+
               <div className="space-y-3">
-                <Button 
+                <Button
                   onClick={handleRetry}
                   className="w-full bg-blue-600 hover:bg-blue-700"
                 >
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Intentar Nuevamente
                 </Button>
-                
-                <Button 
+
+                <Button
                   onClick={handleGoHome}
-                  variant="outline" 
+                  variant="outline"
                   className="w-full"
                 >
                   <ArrowLeft className="mr-2 h-4 w-4" />
@@ -122,9 +124,9 @@ function PaymentErrorContent() {
                 <p className="text-sm text-blue-700">
                   Si continúas teniendo problemas con tu pago, contacta nuestro soporte técnico.
                 </p>
-                <Button 
-                  variant="link" 
-                  size="sm" 
+                <Button
+                  variant="link"
+                  size="sm"
                   className="p-0 h-auto text-blue-600"
                   onClick={() => router.push('/contacto')}
                 >

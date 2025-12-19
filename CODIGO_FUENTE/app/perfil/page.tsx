@@ -1,5 +1,7 @@
 ﻿'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { toast } from 'react-toastify'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useSupabaseUser } from '@/hooks/use-supabase-user'

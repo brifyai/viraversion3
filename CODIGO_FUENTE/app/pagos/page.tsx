@@ -1,6 +1,8 @@
 ﻿
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { toast } from 'react-toastify'
 
 import { useState, useEffect, Suspense } from 'react'
@@ -16,12 +18,12 @@ import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { MercadoPagoButton } from '@/components/mercadopago-button'
 import { PaymentSuccessModal } from '@/components/payment-success-modal'
-import { 
-  CreditCard, 
-  Building2, 
-  Shield, 
-  Check, 
-  ArrowLeft, 
+import {
+  CreditCard,
+  Building2,
+  Shield,
+  Check,
+  ArrowLeft,
   Clock,
   DollarSign,
   Truck,
@@ -166,7 +168,7 @@ function PagosContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const planId = searchParams.get('plan')
-  
+
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<'mercadopago' | 'transfer'>('mercadopago')
   const [isProcessing, setIsProcessing] = useState(false)
@@ -249,7 +251,7 @@ function PagosContent() {
         },
         body: JSON.stringify(preference),
       })
-      
+
       const data = await response.json()
       return data.id
     } catch (error) {
@@ -280,11 +282,11 @@ function PagosContent() {
     try {
       // Simular generación de referencia de transferencia
       await new Promise(resolve => setTimeout(resolve, 1000))
-      
+
       const reference = `VIRA-${selectedPlan?.id?.toUpperCase()}-${Date.now().toString().slice(-6)}`
       setTransferReference(reference)
       setPaymentStep('pending')
-      
+
     } catch (error) {
       toast.error('Error al generar la orden de transferencia')
     } finally {
@@ -315,7 +317,7 @@ function PagosContent() {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navigation />
-        
+
         <main className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-8">
           <div className="text-center mb-12">
             <h1 className="text-3xl font-bold text-gray-900 mb-4">
@@ -328,8 +330,8 @@ function PagosContent() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {plans.map((plan) => (
-              <Card 
-                key={plan.id} 
+              <Card
+                key={plan.id}
                 className={`relative ${plan.popular ? 'ring-2 ring-blue-500 shadow-lg' : ''}`}
               >
                 {plan.popular && (
@@ -339,7 +341,7 @@ function PagosContent() {
                     </Badge>
                   </div>
                 )}
-                
+
                 <CardHeader className="text-center pb-4">
                   <CardTitle className="text-xl font-bold">{plan.name}</CardTitle>
                   <div className="mt-4">
@@ -349,7 +351,7 @@ function PagosContent() {
                     <span className="text-gray-600 text-lg">/{plan.interval === 'month' ? 'mes' : 'año'}</span>
                   </div>
                 </CardHeader>
-                
+
                 <CardContent className="space-y-4">
                   <ul className="space-y-3">
                     {plan.features.map((feature, index) => (
@@ -359,9 +361,9 @@ function PagosContent() {
                       </li>
                     ))}
                   </ul>
-                  
+
                   <div className="pt-4">
-                    <Button 
+                    <Button
                       className="w-full"
                       onClick={() => {
                         setSelectedPlan(plan)
@@ -394,21 +396,21 @@ function PagosContent() {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navigation />
-        
+
         <main className="mx-auto max-w-2xl px-4 sm:px-6 lg:px-8 py-16">
           <div className="text-center">
             <div className="mx-auto w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mb-6">
               <CheckCircle className="h-8 w-8 text-white" />
             </div>
-            
+
             <h1 className="text-2xl font-bold text-gray-900 mb-4">
               ¡Pago Exitoso!
             </h1>
-            
+
             <p className="text-gray-600 mb-8">
               Tu suscripción al <strong>{selectedPlan.name}</strong> ha sido activada exitosamente.
             </p>
-            
+
             <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-8">
               <h3 className="font-semibold text-green-900 mb-2">Próximos pasos:</h3>
               <ul className="text-left text-green-800 space-y-1 text-sm">
@@ -418,7 +420,7 @@ function PagosContent() {
                 <li>✅ La factura será enviada a tu email</li>
               </ul>
             </div>
-            
+
             <div className="space-x-4">
               <Button onClick={() => router.push('/perfil')}>
                 Ver Mi Perfil
@@ -438,7 +440,7 @@ function PagosContent() {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navigation />
-        
+
         <main className="mx-auto max-w-2xl px-4 sm:px-6 lg:px-8 py-8">
           <Card>
             <CardHeader className="text-center">
@@ -450,7 +452,7 @@ function PagosContent() {
                 Realiza tu transferencia con los siguientes datos
               </p>
             </CardHeader>
-            
+
             <CardContent className="space-y-6">
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                 <div className="flex items-center mb-2">
@@ -461,7 +463,7 @@ function PagosContent() {
                   Tu plan se activará una vez que confirmemos el pago de tu transferencia (1-2 días hábiles).
                 </p>
               </div>
-              
+
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
                   <span className="font-medium">Referencia de Pago:</span>
@@ -478,7 +480,7 @@ function PagosContent() {
                     </Button>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
                   <span className="font-medium">Monto Total:</span>
                   <span className="text-lg font-bold text-green-700">
@@ -486,9 +488,9 @@ function PagosContent() {
                   </span>
                 </div>
               </div>
-              
+
               <Separator />
-              
+
               <div>
                 <h4 className="font-medium mb-4">Datos Bancarios - Elige tu banco preferido:</h4>
                 <div className="space-y-4">
@@ -527,7 +529,7 @@ function PagosContent() {
                   ))}
                 </div>
               </div>
-              
+
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                 <h5 className="font-medium text-gray-900 mb-2">Instrucciones:</h5>
                 <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside">
@@ -537,17 +539,17 @@ function PagosContent() {
                   <li>Tu plan se activará en 1-2 días hábiles</li>
                 </ol>
               </div>
-              
+
               <div className="flex space-x-4">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="flex-1"
                   onClick={() => setPaymentStep('select')}
                 >
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   Volver
                 </Button>
-                <Button 
+                <Button
                   className="flex-1"
                   onClick={() => window.open('mailto:pagos@vira.cl?subject=Comprobante de Transferencia - ' + transferReference)}
                 >
@@ -566,18 +568,18 @@ function PagosContent() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navigation />
-      
+
       <main className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-6">
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             onClick={() => setSelectedPlan(null)}
             className="mb-4"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Cambiar Plan
           </Button>
-          
+
           <h1 className="text-2xl font-bold text-gray-900">Finalizar Pago</h1>
           <p className="text-gray-600 mt-1">
             Estás suscribiéndote al <strong>{selectedPlan.name}</strong>
@@ -601,7 +603,7 @@ function PagosContent() {
                     <Label className="text-sm font-medium text-gray-700">Nombre Completo</Label>
                     <Input
                       value={billingData.name}
-                      onChange={(e) => setBillingData({...billingData, name: e.target.value})}
+                      onChange={(e) => setBillingData({ ...billingData, name: e.target.value })}
                       className="mt-1"
                     />
                   </div>
@@ -610,7 +612,7 @@ function PagosContent() {
                     <Input
                       type="email"
                       value={billingData.email}
-                      onChange={(e) => setBillingData({...billingData, email: e.target.value})}
+                      onChange={(e) => setBillingData({ ...billingData, email: e.target.value })}
                       className="mt-1"
                     />
                   </div>
@@ -618,7 +620,7 @@ function PagosContent() {
                     <Label className="text-sm font-medium text-gray-700">Empresa</Label>
                     <Input
                       value={billingData.company}
-                      onChange={(e) => setBillingData({...billingData, company: e.target.value})}
+                      onChange={(e) => setBillingData({ ...billingData, company: e.target.value })}
                       className="mt-1"
                     />
                   </div>
@@ -626,7 +628,7 @@ function PagosContent() {
                     <Label className="text-sm font-medium text-gray-700">RUT</Label>
                     <Input
                       value={billingData.rut}
-                      onChange={(e) => setBillingData({...billingData, rut: e.target.value})}
+                      onChange={(e) => setBillingData({ ...billingData, rut: e.target.value })}
                       className="mt-1"
                     />
                   </div>
@@ -634,7 +636,7 @@ function PagosContent() {
                     <Label className="text-sm font-medium text-gray-700">Dirección</Label>
                     <Input
                       value={billingData.address}
-                      onChange={(e) => setBillingData({...billingData, address: e.target.value})}
+                      onChange={(e) => setBillingData({ ...billingData, address: e.target.value })}
                       className="mt-1"
                     />
                   </div>
@@ -642,13 +644,13 @@ function PagosContent() {
                     <Label className="text-sm font-medium text-gray-700">Ciudad</Label>
                     <Input
                       value={billingData.city}
-                      onChange={(e) => setBillingData({...billingData, city: e.target.value})}
+                      onChange={(e) => setBillingData({ ...billingData, city: e.target.value })}
                       className="mt-1"
                     />
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-gray-700">Región</Label>
-                    <Select value={billingData.region} onValueChange={(value) => setBillingData({...billingData, region: value})}>
+                    <Select value={billingData.region} onValueChange={(value) => setBillingData({ ...billingData, region: value })}>
                       <SelectTrigger className="mt-1">
                         <SelectValue />
                       </SelectTrigger>
@@ -680,9 +682,8 @@ function PagosContent() {
                       return (
                         <div
                           key={method.id}
-                          className={`flex items-center space-x-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50 ${
-                            paymentMethod === method.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-                          }`}
+                          className={`flex items-center space-x-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50 ${paymentMethod === method.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                            }`}
                           onClick={() => setPaymentMethod(method.id)}
                         >
                           <RadioGroupItem value={method.id} id={method.id} />
@@ -774,8 +775,8 @@ function PagosContent() {
                       className="w-full"
                     />
                   ) : (
-                    <Button 
-                      className="w-full" 
+                    <Button
+                      className="w-full"
                       size="lg"
                       onClick={handlePayment}
                       disabled={isProcessing}
