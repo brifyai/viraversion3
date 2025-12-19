@@ -76,6 +76,7 @@ export default function CrearNoticiero() {
   const [adCount, setAdCount] = useState(3)
   const [generateAudio, setGenerateAudio] = useState(false)  // Toggle para generar audio en finalize
   const [selectedVoice, setSelectedVoice] = useState('es-mx')
+  const [voiceWPM, setVoiceWPM] = useState(175)  // WPM de la voz seleccionada
   const [voiceConfig, setVoiceConfig] = useState<VoiceConfigSettings>(defaultVoiceConfig)
   const [timeStrategy, setTimeStrategy] = useState('auto')
   const [scheduledTime, setScheduledTime] = useState('08:00')  // Hora programada para el noticiero
@@ -217,9 +218,6 @@ export default function CrearNoticiero() {
   // Obtener regiones únicas
   const regions = [...new Set(radioStations.map(r => r.region))].sort()
 
-  // Estado para WPM de la voz (estimación de duración)
-  const [voiceWPM, setVoiceWPM] = useState(150)
-
   // Cargar estadísticas de noticias (al inicio y cuando cambia la región)
   useEffect(() => {
     async function loadNewsStats() {
@@ -300,14 +298,19 @@ export default function CrearNoticiero() {
         const matchingKey = Object.keys(data.por_categoria || {}).find(
           key => key.toLowerCase() === categoryName.toLowerCase()
         )
-        const count = matchingKey ? data.por_categoria[matchingKey] : 0
+        const availableCount = matchingKey ? data.por_categoria[matchingKey] : 0
 
-        console.log(`   ${categoryName}: encontradas ${count} (key: ${matchingKey || 'ninguna'})`)
+        console.log(`   ${categoryName}: encontradas ${availableCount} (key: ${matchingKey || 'ninguna'})`)
+
+        // ✅ CORREGIDO: Si hay noticias y la categoría está checked, seleccionar hasta 3
+        const newSelectedCount = cat.checked && availableCount > 0
+          ? Math.min(3, availableCount)
+          : 0
 
         return {
           ...cat,
-          count,
-          selectedCount: cat.checked ? Math.min(cat.selectedCount || 3, count) : 0
+          count: availableCount,
+          selectedCount: newSelectedCount
         }
       })
 
@@ -801,7 +804,7 @@ export default function CrearNoticiero() {
                 <div className="flex flex-wrap gap-3">
                   <Button
                     onClick={handleScanSources}
-                    disabled={isScanning || selectedSourceIds.length === 0}
+                    disabled={isScanning || selectedSourceIds.length === 0 || !selectedRegion}
                     className="flex items-center gap-2"
                     variant={hasScanned ? "outline" : "default"}
                   >
@@ -832,45 +835,53 @@ export default function CrearNoticiero() {
                   </div>
                 )}
 
-                {!hasScanned && (
+                {!hasScanned && !selectedRegion && (
+                  <div className="p-3 bg-gray-100 border border-gray-300 rounded-lg text-gray-600 text-sm">
+                    ⚠️ Primero selecciona una región para escanear fuentes.
+                  </div>
+                )}
+
+                {!hasScanned && selectedRegion && (
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">
-                    💡 Primero escanea tus fuentes para ver las noticias disponibles.
+                    💡 Escanea tus fuentes para ver las noticias disponibles.
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* 3. Categorías */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>3. Selección de Noticias por Categoría</span>
-                  {(loadingStats || isScanning) && (
-                    <span className="text-sm font-normal text-blue-600 animate-pulse">
-                      {isScanning ? 'Escaneando...' : 'Cargando...'}
-                    </span>
+            {/* 3. Categorías - Solo visible después de escanear */}
+            {hasScanned && scannedNews.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>3. Selección de Noticias por Categoría</span>
+                    {(loadingStats || isScanning) && (
+                      <span className="text-sm font-normal text-blue-600 animate-pulse">
+                        {isScanning ? 'Escaneando...' : 'Cargando...'}
+                      </span>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <CategorySelector
+                    categories={categories}
+                    onCategoryChange={handleCategoryChange}
+                    onOpenNewsModal={handleOpenModal}
+                    showCounts={true}
+                    maxPerCategory={10}
+                  />
+
+                  {hasScanned && totalNewsSelected > 0 && (
+                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+                      <p>
+                        ✨ <strong>{totalNewsSelected}</strong> noticias seleccionadas.
+                        Al generar el noticiero, el sistema descargará el contenido automáticamente.
+                      </p>
+                    </div>
                   )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CategorySelector
-                  categories={categories}
-                  onCategoryChange={handleCategoryChange}
-                  onOpenNewsModal={handleOpenModal}
-                  showCounts={true}
-                  maxPerCategory={10}
-                />
-
-                {hasScanned && totalNewsSelected > 0 && (
-                  <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
-                    <p>
-                      ✨ <strong>{totalNewsSelected}</strong> noticias seleccionadas.
-                      Al generar el noticiero, el sistema descargará el contenido automáticamente.
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Alerta de Scraping Fallido */}
             {scrapingAlert && scrapingAlert.fallidos > 0 && (
@@ -920,6 +931,8 @@ export default function CrearNoticiero() {
                   min={5}
                   max={60}
                   selectedNewsCount={totalNewsSelected}
+                  voiceWPM={voiceWPM}
+                  voiceSpeed={voiceConfig.speed}
                 />
 
               </CardContent>

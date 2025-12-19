@@ -220,18 +220,17 @@ export async function POST(request: NextRequest) {
     // ✅ WPM ADAPTATIVO - Basado en voz seleccionada y velocidad
     // Fórmula: voiceBaseWPM * (1 + speed/100) * CORRECTION_FACTOR
     // CORRECTION_FACTOR compensa la diferencia entre WPM teórico y real del TTS
-    // Test 12/18: Con 0.92 audio fue 94% del estimado → ajustar a 0.97
-    const CORRECTION_FACTOR = 0.97
+    // Test 12/19: Timeline 9:07, Audio 8:09 (-58s, ~10% corto) → aumentar factor de 0.81 a 0.90
+    // Factor MAYOR = más palabras generadas = audio más largo
+    const CORRECTION_FACTOR = 0.90
     const voiceBaseWPM = voiceWPM || 150  // WPM base de la voz (desde metadata)
     const speedAdjustment = 1 + ((voiceSettings?.speed ?? 13) / 100)  // Ajuste por velocidad
     const effectiveWPM = Math.round(voiceBaseWPM * speedAdjustment * CORRECTION_FACTOR)
 
-    // ✅ MARGEN DE SEGURIDAD - "En radio pasarse es peor que quedarse corto"
-    const SAFETY_MARGIN = 0.95  // 5% de margen
+    // ✅ Sin margen adicional - el CORRECTION_FACTOR ya incluye buffer
     const originalTargetDuration = targetDuration  // Guardar original para logs
-    targetDuration = Math.round(targetDuration * SAFETY_MARGIN)  // Aplicar margen
 
-    console.log(`🎤 WPM: base ${voiceBaseWPM} × speed ${speedAdjustment.toFixed(2)} × factor ${CORRECTION_FACTOR} = ${effectiveWPM} | Objetivo: ${originalTargetDuration}s → ${targetDuration}s (margen 5%)`)
+    console.log(`🎤 WPM: base ${voiceBaseWPM} × speed ${speedAdjustment.toFixed(2)} × factor ${CORRECTION_FACTOR} = ${effectiveWPM} | Objetivo: ${originalTargetDuration}s`)
 
     // Normalizar región antes de usarla
     const normalizedRegion = await normalizeRegion(region)
@@ -647,7 +646,7 @@ export async function POST(request: NextRequest) {
       type: 'intro',
       title: 'Intro',
       content: introText,
-      duration: 15,
+      duration: 12,  // ✅ Calibrado: intro real ~12s con pausas TTS
       isHumanized: true,
       voiceId: voiceModel || 'default'
     }
@@ -998,7 +997,7 @@ NO uses emojis ni caracteres especiales.`
       type: 'outro',
       title: 'Cierre',
       content: outroText,
-      duration: 15,
+      duration: 6,   // ✅ Calibrado: outro corto ~6s
       isHumanized: true,
       voiceId: voiceModel || 'default'
     }

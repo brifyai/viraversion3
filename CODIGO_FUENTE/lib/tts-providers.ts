@@ -54,8 +54,8 @@ export function getCalibratedWPM(voiceId: string): number {
 // Constantes de timing para cálculos precisos
 export const TIMING_CONSTANTS = {
   SILENCE_BETWEEN_NEWS: 1.5,     // Segundos de silencio entre noticias (audio-assembler)
-  INTRO_DURATION: 15,            // Duración estimada del intro
-  OUTRO_DURATION: 15,            // Duración estimada del outro
+  INTRO_DURATION: 12,            // Duración real medida (incluye pausas TTS)
+  OUTRO_DURATION: 6,             // Duración estimada del outro (~15 palabras)
   AD_DURATION: 25,               // Duración promedio de publicidad
   CORTINA_DURATION: 5,           // Duración de cortina musical
   BUFFER_PERCENTAGE: 0.05        // 5% de buffer para variaciones

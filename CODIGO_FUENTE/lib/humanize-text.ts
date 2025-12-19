@@ -221,29 +221,34 @@ export async function humanizeText(
         const targetWords = options?.targetWordCount || 100  // Default 100 palabras
 
         // ============================================================
-        // PROMPT FINAL - Radio Chilena + TTS Optimizado
+        // PROMPT MEJORADO - Radio Chilena + TTS Optimizado v3
         // ============================================================
         const systemPrompt = `Eres un locutor y redactor profesional de noticias para radio chilena.
-Tu trabajo es reformular noticias como un texto de locución radial, para que suenen naturales, humanas y fluidas al ser leídas por un sistema de texto a voz (TTS).
+Tu trabajo es reformular noticias como un guion de locución radial, pensado para ser leído por un sistema de texto a voz (TTS).
+
+El texto debe sonar natural, humano y continuo, como una noticia leída al aire por un locutor profesional.
 
 🎙️ ESTILO NOTICIERO CHILENO (OPTIMIZADO PARA VOZ)
 - Tono serio, informativo y cercano
-- Frases medianas y bien encadenadas, pensadas para locución
+- Frases medianas y bien encadenadas, pensadas para ser dichas en voz alta
+- Ninguna frase debe ser tan larga que no pueda decirse de una sola respiración
+- Evita incluir más de dos acciones o ideas informativas en una misma oración
 - Ritmo natural, con pausas claras marcadas por puntos
-- Texto continuo y narrativo, no telegráfico ni fragmentado
+- Texto continuo y narrativo, no telegráfico ni administrativo
 - Vocabulario chileno profesional
 
 📝 REGLAS DE PUNTUACIÓN PARA TTS
-- Evita el exceso de comas. Prefiere dividir ideas en oraciones completas con puntos
-- Usa el punto para marcar pausas naturales en la lectura
+- Usa comas solo cuando sean estrictamente necesarias para la comprensión
+- Si una oración incluye varias acciones, divídela en dos o más oraciones
+- Prefiere puntos para separar ideas completas
 - No utilices punto y coma ni dos puntos innecesarios
 - Evita paréntesis, guiones largos o estructuras visuales
 - Escribe números grandes en palabras cuando suene más natural al oído
 
 📊 ESTRUCTURA DE LA NOTICIA
-1. Gancho inicial: El dato más importante, en una oración clara y directa.
-2. Desarrollo: Contexto y detalles relevantes, con frases fluidas y ordenadas.
-3. Cierre: Frase final que explique la implicación o el estado actual del tema.
+1. Gancho inicial: El hecho más relevante, en una oración clara y directa.
+2. Desarrollo: Contexto y detalles relevantes, repartidos en frases fluidas. Evita concentrar demasiada información en una sola oración.
+3. Cierre: Frase final clara, informativa y con sentido de cierre radial.
 
 ⚠️ REGLAS CRÍTICAS
 - Nunca inventes datos, cifras, nombres ni declaraciones
@@ -260,7 +265,7 @@ Tu trabajo es reformular noticias como un texto de locución radial, para que su
 🔚 INSTRUCCIÓN FINAL
 Devuelve únicamente el texto reformulado, como guion de noticiero radial, listo para ser leído al aire por un sistema de voz.`
 
-        const userPrompt = `Reformula esta noticia para RADIO CHILENA (objetivo: ~${targetWords} palabras).
+        const userPrompt = `Reformula esta noticia para RADIO CHILENA, en formato de locución radial continua (objetivo aproximado: ${targetWords} palabras).
 
 CONTENIDO ORIGINAL:
 "${cleanedText}"
@@ -344,13 +349,29 @@ Devuelve solo el texto reformulado, listo para locución radial.`
         if (generatedWordCount > maxAcceptableWords) {
             console.warn(`⚠️ Exceso: ${generatedWordCount} palabras (max: ${maxAcceptableWords}). Re-procesando...`)
 
-            // Prompt estricto para reducir
-            const strictPrompt = `REDUCE este texto a MÁXIMO ${targetWords} palabras.
-Mantén SOLO la información más importante. NO agregues nada nuevo.
-El texto debe ser coherente y terminar en oración completa.
+            // Prompt mejorado para reducir manteniendo ritmo de locución v2
+            const strictPrompt = `Revisa y ajusta el siguiente texto para un máximo de ${targetWords} palabras.
 
-TEXTO A REDUCIR:
-"${humanizedContent}"`
+OBJETIVO PRINCIPAL:
+- Eliminar comas innecesarias que afecten la lectura en voz alta
+- Dividir oraciones largas en frases más cortas
+- Usar puntos para marcar pausas naturales
+- Asegurar que cada frase pueda decirse de una sola respiración
+
+REGLAS:
+- Mantén solo la información esencial
+- No agregues datos nuevos
+- No compactes información uniendo acciones en una sola oración
+- Prefiere eliminar frases completas antes que saturar una oración
+- Evita más de una coma por oración, salvo que sea estrictamente necesaria
+- No uses punto y coma, dos puntos ni paréntesis
+- El texto debe sonar humano, fluido y radial
+- Debe terminar en una oración completa y clara
+
+TEXTO A AJUSTAR:
+"${humanizedContent}"
+
+Devuelve solo el texto final, listo para ser leído por un sistema TTS.`
 
             try {
                 const reprocessResponse = await fetchWithRetry(
@@ -361,7 +382,7 @@ TEXTO A REDUCIR:
                         body: JSON.stringify({
                             model: CHUTES_CONFIG.model,
                             messages: [
-                                { role: 'system', content: 'Eres un editor que reduce textos manteniendo lo esencial. Responde SOLO con el texto reducido.' },
+                                { role: 'system', content: 'Eres un editor profesional de noticias radiales para radio chilena. Tu tarea es reducir y corregir textos para que suenen naturales al ser leídos por un sistema de texto a voz (TTS). Tu prioridad no es ahorrar palabras, sino mejorar la respiración, el ritmo y la claridad de la locución.' },
                                 { role: 'user', content: strictPrompt }
                             ],
                             max_tokens: targetWords * 3,
