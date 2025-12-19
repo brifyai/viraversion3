@@ -71,7 +71,7 @@ Thumbs.db
 
 # Archivos de lock y dependencias
 package-lock.json
-yarn.lock
+# yarn.lock  # IMPORTANTE: yarn.lock DEBE subirse para que Netlify instale las versiones correctas
 pnpm-lock.yaml
 
 # Archivos de configuración local

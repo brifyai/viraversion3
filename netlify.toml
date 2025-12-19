@@ -1,6 +1,6 @@
 [build]
   base = "CODIGO_FUENTE"
-  command = "yarn build"
+  command = "yarn install && yarn build"
   publish = ".next"
 
 [build.environment]
