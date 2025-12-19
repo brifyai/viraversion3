@@ -3,6 +3,8 @@
  * Estadísticas globales del sistema para Super Admin
  */
 
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase-auth'
 import { supabaseAdmin } from '@/lib/supabase-server'

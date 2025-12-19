@@ -1,3 +1,5 @@
+// Force dynamic rendering for all pages (prevents useContext errors during prerendering)
+export const dynamic = 'force-dynamic'
 
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'

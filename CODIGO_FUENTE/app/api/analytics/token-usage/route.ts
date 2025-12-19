@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseSession } from '@/lib/supabase-server'
 import { getTokenUsageMetrics } from '@/lib/usage-logger'

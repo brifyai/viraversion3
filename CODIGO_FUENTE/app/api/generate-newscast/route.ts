@@ -92,7 +92,7 @@ async function generateAudio(
         provider: 'auto',
         voice,
         // ✅ Pasar configuración de voz al TTS (defaults: speed 13, pitch 0, volume 2)
-        speed: voiceSettings?.speed ?? 13,
+        speed: voiceSettings?.speed ?? 1,
         pitch: voiceSettings?.pitch ?? 0,
         volume: voiceSettings?.volume ?? 2,  // ✅ NUEVO
         fmRadioEffect: voiceSettings?.fmRadioEffect ?? false,
@@ -209,8 +209,8 @@ export async function POST(request: NextRequest) {
       // ✅ Configuración de voz (speed, pitch, volume, fmRadio)
       // Defaults basados en recomendación de VoiceMaker
       voiceSettings = {
-        speed: 13,     // 13% más rápido (antes 15)
-        pitch: 0,      // Tono natural (antes -5)
+        speed: 1,      // +1% velocidad (recomendación VoiceMaker)
+        pitch: 0,      // Tono natural
         volume: 2,     // +2dB de volumen (nuevo)
         fmRadioEffect: false,
         fmRadioIntensity: 27
@@ -224,7 +224,7 @@ export async function POST(request: NextRequest) {
     // Factor MAYOR = más palabras generadas = audio más largo
     const CORRECTION_FACTOR = 0.90
     const voiceBaseWPM = voiceWPM || 150  // WPM base de la voz (desde metadata)
-    const speedAdjustment = 1 + ((voiceSettings?.speed ?? 13) / 100)  // Ajuste por velocidad
+    const speedAdjustment = 1 + ((voiceSettings?.speed ?? 1) / 100)  // Ajuste por velocidad
     const effectiveWPM = Math.round(voiceBaseWPM * speedAdjustment * CORRECTION_FACTOR)
 
     // ✅ Sin margen adicional - el CORRECTION_FACTOR ya incluye buffer

@@ -166,7 +166,7 @@ export function VoiceConfig({ settings, onChange, disabled }: VoiceConfigProps) 
 
 // Default settings - Basados en recomendación de VoiceMaker
 export const defaultVoiceConfig: VoiceConfigSettings = {
-  speed: 13,      // +13% más rápido (noticiero)
+  speed: 1,       // +1% velocidad (recomendación VoiceMaker)
   pitch: 0,       // Tono natural
   volume: 2,      // +2dB de volumen
   fmRadioEffect: false,

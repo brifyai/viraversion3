@@ -95,7 +95,7 @@ export class VoiceMakerTTSProvider implements TTSProvider {
         Text: normalizedText,
         OutputFormat: 'mp3',
         SampleRate: '48000',
-        MasterSpeed: String(options?.speed ?? 13),  // +13% más rápido (default)
+        MasterSpeed: String(options?.speed ?? 1),  // +1% velocidad (recomendación VoiceMaker)
         MasterPitch: String(options?.pitch ?? 0),   // Tono natural (antes -5)
         MasterVolume: String(options?.volume ?? 2), // +2dB volumen (default)
         Effect: options?.effect || 'news',          // Estilo noticiero
