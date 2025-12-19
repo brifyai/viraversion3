@@ -220,60 +220,65 @@ export async function humanizeText(
         const transitionPhrase = context ? getTransitionPhrase(context) : ''
         const targetWords = options?.targetWordCount || 100  // Default 100 palabras
 
+        // ✅ NUEVO: Extraer tema central de la primera oración para anclaje
+        const extractTopic = (text: string): string => {
+            const firstSentence = text.split(/[.!?]/)[0]?.trim() || ''
+            // Limpiar y limitar a 100 chars
+            return firstSentence.substring(0, 100).replace(/["']/g, '')
+        }
+        const topicAnchor = extractTopic(cleanedText)
+
         // ============================================================
-        // PROMPT MEJORADO - Radio Chilena + TTS Optimizado v3
+        // PROMPT v6 - TTS READY + Anti-Comas + Anclaje Temático
         // ============================================================
-        const systemPrompt = `Eres un locutor y redactor profesional de noticias para radio chilena.
-Tu trabajo es reformular noticias como un guion de locución radial, pensado para ser leído por un sistema de texto a voz (TTS).
+        const systemPrompt = `Eres un editor y locutor profesional de radio en Chile. Tu tarea es transformar noticias en **guiones radiales listos para TTS** (texto a voz). 
 
-El texto debe sonar natural, humano y continuo, como una noticia leída al aire por un locutor profesional.
+⚠️ IMPORTANTE: El texto será leído por un sistema de voz, NO por un humano. Por eso:
 
-🎙️ ESTILO NOTICIERO CHILENO (OPTIMIZADO PARA VOZ)
-- Tono serio, informativo y cercano
-- Frases medianas y bien encadenadas, pensadas para ser dichas en voz alta
-- Ninguna frase debe ser tan larga que no pueda decirse de una sola respiración
-- Evita incluir más de dos acciones o ideas informativas en una misma oración
-- Ritmo natural, con pausas claras marcadas por puntos
-- Texto continuo y narrativo, no telegráfico ni administrativo
-- Vocabulario chileno profesional
+✅ DEBES:
+- Usar **solo oraciones completas que se puedan leer en una sola respiración** (máx. 12-15 palabras).
+- **Reemplazar TODAS las comas innecesarias por puntos**. Solo usa coma si es imposible entender sin ella (muy raro).
+- Cada oración debe contener **una sola idea o acción**. Nada de "A hizo X, y luego B dijo Y".
+- Escribir como si hablaras al aire: **natural, fluido, sin estructuras escritas**.
+- Usar vocabulario chileno estándar (ej: "carabineros", "miles de millones", "alcalde").
+- Terminar siempre con una oración completa que cierre la noticia.
 
-📝 REGLAS DE PUNTUACIÓN PARA TTS
-- Usa comas solo cuando sean estrictamente necesarias para la comprensión
-- Si una oración incluye varias acciones, divídela en dos o más oraciones
-- Prefiere puntos para separar ideas completas
-- No utilices punto y coma ni dos puntos innecesarios
-- Evita paréntesis, guiones largos o estructuras visuales
-- Escribe números grandes en palabras cuando suene más natural al oído
+❌ NUNCA:
+- Uses más de una coma por noticia (ideal: cero).
+- Uses punto y coma, dos puntos, guiones largos, paréntesis o viñetas.
+- Incluyas frases como "según informes", "se informó que", "fuentes indicaron".
+- Escribas oraciones de más de 15 palabras.
+- Inventes datos, nombres, cifras o declaraciones.
+- **Introduzcas temas que no estén en el texto original**.
+- **Relaciones la noticia con otros temas aunque parezcan relacionados**.
 
-📊 ESTRUCTURA DE LA NOTICIA
-1. Gancho inicial: El hecho más relevante, en una oración clara y directa.
-2. Desarrollo: Contexto y detalles relevantes, repartidos en frases fluidas. Evita concentrar demasiada información en una sola oración.
-3. Cierre: Frase final clara, informativa y con sentido de cierre radial.
+🧠 REGLA DE ORO PARA TTS:
+> "Si al leer en voz alta necesitas hacer una pausa para respirar… entonces debió ser un punto, no una coma."
 
-⚠️ REGLAS CRÍTICAS
-- Nunca inventes datos, cifras, nombres ni declaraciones
-- Usa solo información presente en el texto original
-- No menciones autores, medios ni expresiones como "según fuentes"
-- No uses emojis ni caracteres especiales
-- Mantén absoluta precisión informativa
+📌 ANCLAJE TEMÁTICO:
+Si el texto original menciona un solo tema, **no introduzcas ni sugieras otros temas, aunque parezcan relacionados**.
 
-📏 LONGITUD
-- Extensión objetivo: ${targetWords} palabras
-- Si el contenido es largo, resume lo esencial
-- Si es breve, agrega contexto general sin inventar información
+📝 ESTRUCTURA:
+1. **Gancho**: Noticia principal en una oración clara.
+2. **Desarrollo**: Detalles en frases cortas y separadas por puntos.
+3. **Cierre**: Conclusión o dato final que dé cierre natural.
 
-🔚 INSTRUCCIÓN FINAL
-Devuelve únicamente el texto reformulado, como guion de noticiero radial, listo para ser leído al aire por un sistema de voz.`
+🎯 EXTENSIÓN: ${targetWords} palabras. Resume si es necesario, pero **mejor menos que mal leído**.
 
-        const userPrompt = `Reformula esta noticia para RADIO CHILENA, en formato de locución radial continua (objetivo aproximado: ${targetWords} palabras).
+DEVUELVES ÚNICAMENTE el guion final. Nada más.`
 
-CONTENIDO ORIGINAL:
+        const userPrompt = `Transforma este texto en un guion radial para Chile, listo para TTS. Usa solo puntos. Cero comas a menos que sea imposible entender.
+
+📌 TEMA CENTRAL: "${topicAnchor}"
+⚠️ NO HABLES DE OTROS TEMAS. Solo lo que está en el texto original.
+
+NOTICIA ORIGINAL:
 "${cleanedText}"
 
-${transitionPhrase ? `COMENZAR CON: "${transitionPhrase}"` : ''}
+${transitionPhrase ? `INICIA CON: "${transitionPhrase}"` : ''}
 REGIÓN: ${region}
 
-Devuelve solo el texto reformulado, listo para locución radial.`
+→ Devuelve SOLO el guion sobre el tema central. Nada más.`
 
         // Calcular tokens aproximados
         const inputTokens = Math.ceil((systemPrompt.length + userPrompt.length) / 4)
@@ -349,29 +354,45 @@ Devuelve solo el texto reformulado, listo para locución radial.`
         if (generatedWordCount > maxAcceptableWords) {
             console.warn(`⚠️ Exceso: ${generatedWordCount} palabras (max: ${maxAcceptableWords}). Re-procesando...`)
 
-            // Prompt mejorado para reducir manteniendo ritmo de locución v2
-            const strictPrompt = `Revisa y ajusta el siguiente texto para un máximo de ${targetWords} palabras.
+            // ✅ Extraer tema del contenido humanizado para anclaje
+            const extractTopicFromContent = (text: string): string => {
+                const firstSentence = text.split(/[.!?]/)[0]?.trim() || ''
+                return firstSentence.substring(0, 80).replace(/["']/g, '')
+            }
+            const reductionTopic = extractTopicFromContent(humanizedContent)
 
-OBJETIVO PRINCIPAL:
-- Eliminar comas innecesarias que afecten la lectura en voz alta
-- Dividir oraciones largas en frases más cortas
-- Usar puntos para marcar pausas naturales
-- Asegurar que cada frase pueda decirse de una sola respiración
+            // Prompt v6 - Reducción TTS + Anti-Comas + Anclaje Temático
+            const strictPrompt = `Eres un editor de radio chilena. 
+Debes REDUCIR este texto a ${targetWords} palabras, **sin cambiar el tema ni los hechos**.
 
-REGLAS:
-- Mantén solo la información esencial
-- No agregues datos nuevos
-- No compactes información uniendo acciones en una sola oración
-- Prefiere eliminar frases completas antes que saturar una oración
-- Evita más de una coma por oración, salvo que sea estrictamente necesaria
-- No uses punto y coma, dos puntos ni paréntesis
-- El texto debe sonar humano, fluido y radial
-- Debe terminar en una oración completa y clara
+📌 TEMA CENTRAL: "${reductionTopic}"
 
-TEXTO A AJUSTAR:
-"${humanizedContent}"
+⚠️ REGLAS ABSOLUTAS:
+- **NO cambies el tema**. Si el texto habla de X, **solo habla de X**.
+- **NO menciones temas no presentes** en el texto original (política, economía, personas, etc).
+- **CERO comas innecesarias**. Máximo 14 palabras por oración.
+- **Cada oración = un solo hecho**.
+- **Nunca** uses punto y coma, dos puntos, guiones largos o paréntesis.
+- **No agregues, interpretes ni relaciones** nada fuera del texto original.
+- Usa vocabulario chileno: "Carabineros", "municipalidad", "alcalde".
 
-Devuelve solo el texto final, listo para ser leído por un sistema TTS.`
+🎙️ ESTILO DE LOCUCIÓN:
+- El texto debe sonar como un locutor de radio pública chilena.
+- Frases cortas. Pausas claras. Ritmo constante.
+- Si debes hacer pausa para respirar → eso debió ser un punto.
+
+✂️ REDUCCIÓN:
+- Elimina frases redundantes.
+- **Mejor eliminar información que forzar dos ideas en una oración**.
+- Prioriza: hecho principal → quién → qué → dónde.
+
+✅ SALIDA:
+- Texto continuo, sin saltos de línea.
+- Termina en una oración completa.
+- **SOLO el texto final sobre "${reductionTopic}". Nada más.**
+
+TEXTO A REDUCIR:
+"${humanizedContent}"`
 
             try {
                 const reprocessResponse = await fetchWithRetry(
@@ -382,14 +403,14 @@ Devuelve solo el texto final, listo para ser leído por un sistema TTS.`
                         body: JSON.stringify({
                             model: CHUTES_CONFIG.model,
                             messages: [
-                                { role: 'system', content: 'Eres un editor profesional de noticias radiales para radio chilena. Tu tarea es reducir y corregir textos para que suenen naturales al ser leídos por un sistema de texto a voz (TTS). Tu prioridad no es ahorrar palabras, sino mejorar la respiración, el ritmo y la claridad de la locución.' },
+                                { role: 'system', content: 'Editor de radio chilena. REDUCE textos para TTS. CERO comas. Máx 14 palabras por oración. No inventes nada.' },
                                 { role: 'user', content: strictPrompt }
                             ],
-                            max_tokens: targetWords * 3,
-                            temperature: 0.3
+                            max_tokens: Math.min(500, targetWords * 3),  // Espacio suficiente pero controlado
+                            temperature: 0.1  // Muy bajo: fidelidad, no creatividad
                         })
                     },
-                    { retries: 2, backoff: 2000 }  // ✅ Aumentado para evitar 429 en producción
+                    { retries: 2, backoff: 2000 }
                 )
 
                 if (reprocessResponse.ok) {
