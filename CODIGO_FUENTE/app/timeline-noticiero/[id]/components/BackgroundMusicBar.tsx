@@ -29,6 +29,7 @@ interface BackgroundMusicBarProps {
     currentVolume: number
     currentConfig: BackgroundMusicConfig | null
     onSave: (musicUrl: string | null, volume: number, config: BackgroundMusicConfig | null) => void
+    disabled?: boolean
 }
 
 export function BackgroundMusicBar({
@@ -36,7 +37,8 @@ export function BackgroundMusicBar({
     currentMusicUrl,
     currentVolume,
     currentConfig,
-    onSave
+    onSave,
+    disabled = false
 }: BackgroundMusicBarProps) {
     const [isExpanded, setIsExpanded] = useState(false)
     const [musicItems, setMusicItems] = useState<MusicItem[]>([])
@@ -181,18 +183,20 @@ export function BackgroundMusicBar({
                             <span className="text-gray-600">Música de Fondo (opcional)</span>
                         )}
                     </div>
-                    <Button
-                        variant={hasMusic ? "outline" : "default"}
-                        size="sm"
-                        onClick={() => setIsExpanded(true)}
-                        className={hasMusic ? "border-purple-300 text-purple-700 hover:bg-purple-50" : "bg-purple-600 hover:bg-purple-700"}
-                    >
-                        {hasMusic ? (
-                            <>✏️ Editar</>
-                        ) : (
-                            <>+ Agregar</>
-                        )}
-                    </Button>
+                    {!disabled && (
+                        <Button
+                            variant={hasMusic ? "outline" : "default"}
+                            size="sm"
+                            onClick={() => setIsExpanded(true)}
+                            className={hasMusic ? "border-purple-300 text-purple-700 hover:bg-purple-50" : "bg-purple-600 hover:bg-purple-700"}
+                        >
+                            {hasMusic ? (
+                                <>✏️ Editar</>
+                            ) : (
+                                <>+ Agregar</>
+                            )}
+                        </Button>
+                    )}
                 </div>
             </div>
         )

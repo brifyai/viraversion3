@@ -12,6 +12,7 @@ interface GenerateAudioButtonProps {
     disabled: boolean
     targetDuration?: number
     onSuccess: (audioUrl: string) => void
+    onGeneratingChange?: (isGenerating: boolean) => void
 }
 
 export function GenerateAudioButton({
@@ -19,9 +20,15 @@ export function GenerateAudioButton({
     selectedNewsIds,
     disabled,
     targetDuration,
-    onSuccess
+    onSuccess,
+    onGeneratingChange
 }: GenerateAudioButtonProps) {
     const [isGenerating, setIsGenerating] = useState(false)
+
+    const updateGenerating = (value: boolean) => {
+        setIsGenerating(value)
+        onGeneratingChange?.(value)
+    }
 
     const handleGenerate = async () => {
         if (selectedNewsIds.length === 0) {
@@ -30,7 +37,7 @@ export function GenerateAudioButton({
         }
 
         try {
-            setIsGenerating(true)
+            updateGenerating(true)
             const response = await fetch('/api/finalize-newscast', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -59,7 +66,7 @@ export function GenerateAudioButton({
             console.error('❌ Error finalizando:', err)
             toast.error(`Error: ${err instanceof Error ? err.message : 'Error desconocido'}`)
         } finally {
-            setIsGenerating(false)
+            updateGenerating(false)
         }
     }
 

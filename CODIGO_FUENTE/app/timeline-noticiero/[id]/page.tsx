@@ -142,6 +142,10 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
     newsId: null,
     newsTitle: ''
   })
+  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false)
+
+  // Timeline is read-only during audio generation or after audio is complete
+  const isReadOnly = isGeneratingAudio || !!newscast?.url_audio
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -646,6 +650,7 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
           currentMusicUrl={backgroundMusic.url}
           currentVolume={backgroundMusic.volume}
           currentConfig={backgroundMusic.config}
+          disabled={isReadOnly}
           onSave={async (musicUrl, volume, config) => {
             setBackgroundMusic({ url: musicUrl, volume, config })
             // Guardar en BD
@@ -676,6 +681,7 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
               onAddAudio={() => setShowAudioModal(true)}
               onConfigureMusic={() => setShowMusicConfig(true)}
               hasMusicConfigured={!!backgroundMusic.url}
+              disabled={isReadOnly}
             />
           </CardHeader>
           <CardContent>
@@ -700,6 +706,7 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
                       onUpdateContent={handleUpdateContent}
                       onUpdateAudio={handleUpdateAudio}
                       onDelete={handleDeleteNews}
+                      disabled={isReadOnly}
                     />
                   ))}
                 </div>
@@ -741,6 +748,7 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
               onSuccess={(audioUrl) => {
                 setNewscast(prev => prev ? { ...prev, url_audio: audioUrl, estado: 'completado' } : null)
               }}
+              onGeneratingChange={setIsGeneratingAudio}
             />
           )}
 

@@ -12,6 +12,7 @@ interface SelectionControlsProps {
     onAddAudio?: () => void
     onConfigureMusic?: () => void
     hasMusicConfigured?: boolean
+    disabled?: boolean
 }
 
 export function SelectionControls({
@@ -24,7 +25,8 @@ export function SelectionControls({
     onAddAd,
     onAddAudio,
     onConfigureMusic,
-    hasMusicConfigured
+    hasMusicConfigured,
+    disabled = false
 }: SelectionControlsProps) {
     return (
         <div className="flex items-center gap-2 flex-wrap">
@@ -48,7 +50,7 @@ export function SelectionControls({
                     ({selectedCount}/{totalCount})
                 </span>
             </Button>
-            {onAddAudio && (
+            {onAddAudio && !disabled && (
                 <Button
                     variant="outline"
                     size="sm"
@@ -59,7 +61,7 @@ export function SelectionControls({
                     Cortina
                 </Button>
             )}
-            {onConfigureMusic && (
+            {onConfigureMusic && !disabled && (
                 <Button
                     variant="outline"
                     size="sm"
@@ -73,14 +75,18 @@ export function SelectionControls({
                     {hasMusicConfigured ? '🎵 Música' : 'Música'}
                 </Button>
             )}
-            <Button variant="outline" size="sm" onClick={onAddAd} className="text-amber-600 border-amber-200 hover:bg-amber-50">
-                <Megaphone className="mr-2 h-4 w-4" />
-                Publicidad
-            </Button>
-            <Button variant="outline" size="sm" onClick={onAddNews}>
-                <Plus className="mr-2 h-4 w-4" />
-                Noticia
-            </Button>
+            {!disabled && (
+                <Button variant="outline" size="sm" onClick={onAddAd} className="text-amber-600 border-amber-200 hover:bg-amber-50">
+                    <Megaphone className="mr-2 h-4 w-4" />
+                    Publicidad
+                </Button>
+            )}
+            {!disabled && (
+                <Button variant="outline" size="sm" onClick={onAddNews}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Noticia
+                </Button>
+            )}
         </div>
     )
 }

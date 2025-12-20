@@ -3,7 +3,7 @@ import { toast } from 'react-toastify'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
-import { Clock, Mic, Edit2, RefreshCw, Loader2 } from 'lucide-react'
+import { Clock, Mic, Edit2, RefreshCw, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import { AudioPlayer } from './AudioPlayer'
 import { NewsEditor } from './NewsEditor'
 interface NewsItem {
@@ -32,11 +32,13 @@ interface NewsCardProps {
     onUpdateContent?: (id: string, newContent: string, version: string) => void
     onUpdateAudio?: (id: string, audioUrl: string, duration: number) => void
     onDelete?: (id: string) => void
+    disabled?: boolean
 }
 
-export function NewsCard({ news, index, selected, onToggleSelection, onUpdateContent, onUpdateAudio, onDelete }: NewsCardProps) {
+export function NewsCard({ news, index, selected, onToggleSelection, onUpdateContent, onUpdateAudio, onDelete, disabled = false }: NewsCardProps) {
     const [isEditing, setIsEditing] = useState(false)
     const [isRegenerating, setIsRegenerating] = useState(false)
+    const [isExpanded, setIsExpanded] = useState(false)
 
     const formatDuration = (seconds: number) => {
         const mins = Math.floor(seconds / 60)
@@ -133,6 +135,7 @@ export function NewsCard({ news, index, selected, onToggleSelection, onUpdateCon
                 checked={selected}
                 onCheckedChange={() => onToggleSelection(news.id)}
                 className="mt-1"
+                disabled={disabled}
             />
             <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-semibold ${isAd ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'
                 }`}>
@@ -144,15 +147,17 @@ export function NewsCard({ news, index, selected, onToggleSelection, onUpdateCon
                         {news.title}
                     </h3>
                     <div className="flex gap-2">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0 text-gray-400 hover:text-blue-600"
-                            onClick={() => setIsEditing(true)}
-                        >
-                            <Edit2 className="h-4 w-4" />
-                        </Button>
-                        {onDelete && (
+                        {!disabled && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-gray-400 hover:text-blue-600"
+                                onClick={() => setIsEditing(true)}
+                            >
+                                <Edit2 className="h-4 w-4" />
+                            </Button>
+                        )}
+                        {onDelete && !disabled && (
                             <Button
                                 variant="ghost"
                                 size="sm"
@@ -165,9 +170,26 @@ export function NewsCard({ news, index, selected, onToggleSelection, onUpdateCon
                     </div>
                 </div>
 
-                <p className="text-sm text-gray-600 line-clamp-2 mb-2">
-                    {news.content}
-                </p>
+                {/* Contenido de la noticia - expandible */}
+                <div className="mb-2">
+                    <p className={`text-sm text-gray-600 ${!isExpanded ? 'line-clamp-2' : ''}`}>
+                        {news.content}
+                    </p>
+                    {news.content && news.content.length > 150 && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-blue-600 hover:text-blue-700 p-0 h-auto mt-1"
+                            onClick={() => setIsExpanded(!isExpanded)}
+                        >
+                            {isExpanded ? (
+                                <><ChevronUp className="h-3 w-3 mr-1" />Leer menos</>
+                            ) : (
+                                <><ChevronDown className="h-3 w-3 mr-1" />Leer más</>
+                            )}
+                        </Button>
+                    )}
+                </div>
                 <div className="flex items-center gap-4 text-xs text-gray-500 mb-3">
                     <span className="flex items-center gap-1">
                         <Clock className="h-3 w-3" />
