@@ -1,5 +1,13 @@
-const API_KEY = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || '203b77dfbca7b5138935dadf9b82f10c';
+// Server-only module - cannot be imported by client components
+import 'server-only';
+
+// API key from environment variable (no fallback - must be set in env)
+const API_KEY = process.env.OPENWEATHER_API_KEY;
 const BASE_URL = 'https://api.openweathermap.org/data/2.5/weather';
+
+if (!API_KEY) {
+  console.warn('⚠️ OPENWEATHER_API_KEY not configured - weather feature disabled');
+}
 
 // Mapeo de regiones a ciudades capitales para el clima
 const REGION_TO_CITY: { [key: string]: string } = {

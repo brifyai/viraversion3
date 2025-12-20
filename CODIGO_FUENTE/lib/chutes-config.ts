@@ -3,44 +3,38 @@
  * 
  * Este archivo centraliza toda la configuración relacionada con Chutes AI
  * para facilitar el mantenimiento y evitar duplicación de código.
+ * 
+ * ⚠️ SERVER-ONLY: Este archivo NO puede ser importado por componentes cliente
  */
 
-// Cargar variables de entorno manualmente si estamos en el servidor (fix para Next.js dev)
-if (typeof window === 'undefined') {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const dotenv = require('dotenv');
-    dotenv.config({ path: '.env.local' });
-  } catch (error) {
-    console.warn('⚠️ No se pudo cargar dotenv en chutes-config:', error);
-  }
-}
+// SECURITY: Prevent client-side import
+import 'server-only';
 
-// Configuración de Chutes AI desde variables de entorno
+// Configuración de Chutes AI desde variables de entorno (server-only)
 export const CHUTES_CONFIG = {
-  // API Key desde variables de entorno
-  apiKey: process.env.CHUTES_API_KEY || process.env.NEXT_PUBLIC_CHUTES_API_KEY || '',
+  // API Key - MUST be server-only for security
+  apiKey: process.env.CHUTES_API_KEY || '',
 
-  // Endpoints desde variables de entorno
+  // Endpoints (URLs are not secrets, but config is cleaner here)
   endpoints: {
-    chatCompletions: process.env.NEXT_PUBLIC_CHUTES_CHAT_COMPLETIONS_URL || 'https://llm.chutes.ai/v1/chat/completions',
-    textToSpeech: process.env.NEXT_PUBLIC_CHUTES_TTS_URL || 'https://chutes-kokoro.chutes.ai/speak'
+    chatCompletions: process.env.CHUTES_CHAT_COMPLETIONS_URL || 'https://llm.chutes.ai/v1/chat/completions',
+    textToSpeech: process.env.CHUTES_TTS_URL || 'https://chutes-kokoro.chutes.ai/speak'
   },
 
   // Configuración del modelo y voz
-  model: process.env.NEXT_PUBLIC_CHUTES_MODEL || 'openai/gpt-oss-120b',
-  voice: process.env.NEXT_PUBLIC_CHUTES_VOICE || 'af_heart',
+  model: process.env.CHUTES_MODEL || 'openai/gpt-oss-120b',
+  voice: process.env.CHUTES_VOICE || 'af_heart',
 
   // Configuraciones por defecto para diferentes tipos de peticiones
   defaultOptions: {
     chatCompletions: {
-      model: process.env.NEXT_PUBLIC_CHUTES_MODEL || 'openai/gpt-oss-120b',
+      model: process.env.CHUTES_MODEL || 'openai/gpt-oss-120b',
       stream: false,
       max_tokens: 1024,
       temperature: 0.7
     },
     textToSpeech: {
-      voice: process.env.NEXT_PUBLIC_CHUTES_VOICE || 'af_heart'
+      voice: process.env.CHUTES_VOICE || 'af_heart'
     }
   }
 };
@@ -70,11 +64,11 @@ export const validateChutesConfig = (): boolean => {
 export const getChutesConfigError = (): string => {
   const missing = [];
 
-  if (!CHUTES_CONFIG.apiKey) missing.push('NEXT_PUBLIC_CHUTES_API_KEY');
-  if (!CHUTES_CONFIG.endpoints.chatCompletions) missing.push('NEXT_PUBLIC_CHUTES_CHAT_COMPLETIONS_URL');
-  if (!CHUTES_CONFIG.endpoints.textToSpeech) missing.push('NEXT_PUBLIC_CHUTES_TTS_URL');
-  if (!CHUTES_CONFIG.model) missing.push('NEXT_PUBLIC_CHUTES_MODEL');
-  if (!CHUTES_CONFIG.voice) missing.push('NEXT_PUBLIC_CHUTES_VOICE');
+  if (!CHUTES_CONFIG.apiKey) missing.push('CHUTES_API_KEY');
+  if (!CHUTES_CONFIG.endpoints.chatCompletions) missing.push('CHUTES_CHAT_COMPLETIONS_URL');
+  if (!CHUTES_CONFIG.endpoints.textToSpeech) missing.push('CHUTES_TTS_URL');
+  if (!CHUTES_CONFIG.model) missing.push('CHUTES_MODEL');
+  if (!CHUTES_CONFIG.voice) missing.push('CHUTES_VOICE');
 
   return `Faltan las siguientes variables de entorno de Chutes AI: ${missing.join(', ')}`;
 };

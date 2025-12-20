@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Clock, Globe, MapPin, Eye, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react'
-import { CHUTES_CONFIG, getChutesHeaders, validateChutesConfig } from '@/lib/chutes-config'
+// NOTE: chutes-config import removed - now using /api/humanize-title route instead
 
 interface BreakingNewsCardProps {
   news: {
@@ -28,14 +28,9 @@ interface BreakingNewsCardProps {
 }
 
 export function BreakingNewsCard({ news, onSelect, isSelected = false }: BreakingNewsCardProps) {
-  // Función para resumir el título de la noticia usando Chutes API
+  // Función para resumir el título de la noticia usando el API route seguro
   const humanizarTexto = async (tituloNoticia: string) => {
     try {
-      // Validar configuración de Chutes AI
-      if (!validateChutesConfig()) {
-        throw new Error('La configuración de Chutes AI no está completa. Verifica las variables de entorno.');
-      }
-
       toast.loading('Generando resumen del título...');
 
       // Validar que hay título
@@ -43,43 +38,27 @@ export function BreakingNewsCard({ news, onSelect, isSelected = false }: Breakin
         throw new Error('No hay título para resumir');
       }
 
-      // Generar resumen del título con Chutes API usando configuración centralizada
-      const chutesResponse = await fetch(CHUTES_CONFIG.endpoints.chatCompletions, {
+      // Llamar al API route seguro (secrets se manejan en el servidor)
+      const response = await fetch('/api/humanize-title', {
         method: 'POST',
-        headers: getChutesHeaders(),
-        body: JSON.stringify({
-          model: CHUTES_CONFIG.model,
-          messages: [
-            {
-              role: 'user',
-              content: `resume la siguiente noticia de manera breve:"${tituloNoticia}"`
-            }
-          ],
-          stream: false,
-          max_tokens: 300,
-          temperature: 0.4
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: tituloNoticia })
       });
 
-      if (!chutesResponse.ok) {
-        throw new Error(`Error en API de Chutes: ${chutesResponse.status}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Error del servidor: ${response.status}`);
       }
 
-      const chutesData = await chutesResponse.json();
-      console.log('Respuesta de Chutes:', chutesData);
+      const data = await response.json();
 
-      // Extraer el resumen de la respuesta
-      if (chutesData.choices && chutesData.choices[0] && chutesData.choices[0].message) {
-        const resumen = chutesData.choices[0].message.content;
-        console.log('Resumen generado:', resumen);
-
+      if (data.success && data.summary) {
+        console.log('Resumen generado:', data.summary);
         toast.dismiss();
         toast.success('Resumen generado exitosamente');
-
-        // Mostrar el resumen en un alert o modal
-        //alert(`RESUMEN DEL TÍTULO:\n\n"${tituloNoticia}"\n\n${resumen}`);
-
-        return resumen;
+        return data.summary;
+      } else {
+        throw new Error(data.error || 'No se pudo generar el resumen');
       }
     } catch (error) {
       console.error('Error al resumir título:', error);
