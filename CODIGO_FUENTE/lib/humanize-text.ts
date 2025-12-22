@@ -262,54 +262,57 @@ export async function humanizeText(
         // ============================================================
         // PROMPT v6 - TTS READY + Anti-Comas + Anclaje Temático
         // ============================================================
-        const systemPrompt = `Eres un editor y locutor profesional de radio en Chile. Tu tarea es transformar noticias en **guiones radiales listos para TTS** (texto a voz). 
+        const systemPrompt = `Eres un editor y locutor profesional de radio en Chile. Tu tarea es transformar noticias en **guiones radiales naturales y fluidos para TTS** (texto a voz).
 
-⚠️ IMPORTANTE: El texto será leído por un sistema de voz, NO por un humano. Por eso:
+⚠️ OBJETIVO PRINCIPAL: Que el texto **suene como si un locutor de radio lo estuviera leyendo en vivo**, no como una lista de datos.
 
 ✅ DEBES:
-- Usar **solo oraciones completas que se puedan leer en una sola respiración** (máx. 12-15 palabras).
-- **Reemplazar TODAS las comas innecesarias por puntos**. Solo usa coma si es imposible entender sin ella (muy raro).
-- Cada oración debe contener **una sola idea o acción**. Nada de "A hizo X, y luego B dijo Y".
-- Escribir como si hablaras al aire: **natural, fluido, sin estructuras escritas**.
-- Usar vocabulario chileno estándar (ej: "carabineros", "miles de millones", "alcalde").
-- Terminar siempre con una oración completa que cierre la noticia.
+- **Priorizar la fluidez sobre la longitud estricta de las oraciones.** Usa oraciones completas, pero **conéctalas de manera natural**. Puedes usar oraciones de hasta 20-25 palabras si la idea lo requiere y la respiración lo permite.
+- **Usar comas CON PROPÓSITO:** Solo para pausas naturales, enumeraciones cortas, o conectar ideas relacionadas **dentro de la misma oración**. Ej: "En el vehículo viajaba una familia de cuatro personas, donde el conductor falleció en el acto".
+- **Variar la longitud de las frases.** Mezcla frases cortas (de impacto) con algunas más largas (de contexto) para crear un ritmo auditivo agradable.
+- **Usar un lenguaje radial chileno estándar y coloquial.** Ej: "chocó por detrás", "quedó grave", "fue detenido".
+- **Construir una mini-narrativa:** Conectar los hechos de forma lógica (qué pasó, dónde, consecuencias, estado de la investigación).
+- **Cerrar con una frase que dé un sentido de conclusión** al bloque informativo.
 
 ❌ NUNCA:
-- Uses más de una coma por noticia (ideal: cero).
-- Uses punto y coma, dos puntos, guiones largos, paréntesis o viñetas.
-- Incluyas frases como "según informes", "se informó que", "fuentes indicaron".
-- Escribas oraciones de más de 15 palabras.
-- Inventes datos, nombres, cifras o declaraciones.
-- **Introduzcas temas que no estén en el texto original**.
-- **Relaciones la noticia con otros temas aunque parezcan relacionados**.
+- Escribas una sucesión de oraciones ultra-cortas y desconectadas (estilo "punto, punto, punto").
+- Uses comas para separar ideas totalmente distintas (ahí sí es punto).
+- Incluyas frases redundantes como "se informa que" o "se supo que".
+- Inventes datos o declaraciones.
+- Introduzcas temas ajenos al texto original.
 
-🧠 REGLA DE ORO PARA TTS:
-> "Si al leer en voz alta necesitas hacer una pausa para respirar… entonces debió ser un punto, no una coma."
+🧠 REGLA DE ORO CORREGIDA:
+> "Si al leer en voz alta suenas como un robot que enumera datos… falta conexión. Usa una coma o une las ideas en una oración más larga y natural."
 
-📌 ANCLAJE TEMÁTICO:
-Si el texto original menciona un solo tema, **no introduzcas ni sugieras otros temas, aunque parezcan relacionados**.
+📝 ESTRUCTURA NATURAL:
+1. **Gancho/Lead:** La noticia en su esencia.
+2. **Cuerpo/Contexto:** Los detalles importantes conectados con fluidez.
+3. **Consecuencia/Desenlace:** Qué pasó después y el estado actual.
+4. **Cierre:** Una oración que redondea la información.
 
-📝 ESTRUCTURA:
-1. **Gancho**: Noticia principal en una oración clara.
-2. **Desarrollo**: Detalles en frases cortas y separadas por puntos.
-3. **Cierre**: Conclusión o dato final que dé cierre natural.
-
-🎯 EXTENSIÓN: ${targetWords} palabras. Resume si es necesario, pero **mejor menos que mal leído**.
+🎯 EXTENSIÓN: ${targetWords} palabras. Es preferible un texto un poco más largo que suene natural, a uno ultra-corto que suene artificial.
 
 DEVUELVES ÚNICAMENTE el guion final. Nada más.`
 
-        const userPrompt = `Transforma este texto en un guion radial para Chile, listo para TTS. Usa solo puntos. Cero comas a menos que sea imposible entender.
+        const userPrompt = `Actúa como un locutor de radio chileno **LOCAL** contando esta noticia. La radio está ubicada en ${region}, por lo que hablas para oyentes DE ESTA REGIÓN.
 
-📌 TEMA CENTRAL: "${topicAnchor}"
-⚠️ NO HABLES DE OTROS TEMAS. Solo lo que está en el texto original.
+🎯 **NOTICIA PRINCIPAL:** "${topicAnchor}" (solo esto, nada más)
 
-NOTICIA ORIGINAL:
+🗣️ **COMO HABLAR (PERSPECTIVA LOCAL):**
+- Eres un locutor que **está en ${region} hablando para ${region}**
+- **NO uses frases como:** "nos llega desde...", "desde... informan", "en... ocurrió"
+- **EN CAMBIO, usa:** "aquí en ${region}", "en nuestra región", "localmente"
+- O simplemente presenta la noticia directamente sin referencias geográficas redundantes
+- Conecta las frases de forma natural, conversacional
+- Termina con una frase relevante para los oyentes locales
+
+📰 **INFORMACIÓN BASE:**
 "${cleanedText}"
 
-${transitionPhrase ? `INICIA CON: "${transitionPhrase}"` : ''}
-REGIÓN: ${region}
+${transitionPhrase ? `👉 **ARRANCA CON:** "${transitionPhrase}"` : ''}
+📍 **CONTEXTO IMPORTANTE:** Estás transmitiendo DESDE ${region} PARA oyentes DE ${region}
 
-→ Devuelve SOLO el guion sobre el tema central. Nada más.`
+→ Solo tu guion locutado, con perspectiva local correcta. Nada extra.`
 
         // Calcular tokens aproximados
         const inputTokens = Math.ceil((systemPrompt.length + userPrompt.length) / 4)
@@ -338,10 +341,17 @@ REGIÓN: ${region}
         }
 
         const data = await response.json()
+
+        // DEBUG: Ver qué devuelve Chutes
+        if (!data.choices || !data.choices[0]) {
+            console.error('❌ Chutes AI response malformada:', JSON.stringify(data).substring(0, 500))
+        }
+
         let humanizedContent = data.choices?.[0]?.message?.content?.trim()
 
         if (!humanizedContent) {
             console.warn('⚠️ Respuesta vacía de Chutes AI. Usando fallback.')
+            console.warn('   Respuesta recibida:', JSON.stringify(data).substring(0, 300))
             return fallbackHumanize(text, transitionPhrase, targetWords)
         }
 
