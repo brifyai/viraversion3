@@ -31,17 +31,11 @@ export async function GET(request: NextRequest) {
             .order('nombre', { ascending: true })
 
         // Filtrar por owner según el rol
-        if (user.role === 'super_admin') {
-            // Super admin ve todas las radios (opcionalmente puede filtrar)
-            const filterUserId = searchParams.get('user_id')
-            if (filterUserId) {
-                query = query.eq('user_id', filterUserId)
-            }
-        } else {
-            // Admin y User ven solo las radios del admin correspondiente
-            const ownerId = getResourceOwnerId(user)
-            query = query.eq('user_id', ownerId)
-        }
+        // Todos los usuarios ven solo las radios de su "owner":
+        // - super_admin y admin: ven las suyas (user_id = su ID)
+        // - user: ve las de su admin (user_id = admin_id)
+        const ownerId = getResourceOwnerId(user)
+        query = query.eq('user_id', ownerId)
 
         // Filtrar por región si se especifica
         if (region) {

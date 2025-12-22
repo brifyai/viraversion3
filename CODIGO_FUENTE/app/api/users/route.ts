@@ -12,11 +12,24 @@ const supabase = createClient(
 export async function GET(request: NextRequest) {
   return withPermission('users:read', async (request, user) => {
     try {
-      // Obtener todos los usuarios
-      const { data: users, error: usersError } = await supabase
+      // Si es super_admin, puede ver todos los usuarios
+      // Si es admin, solo ve los usuarios que dependen de él (admin_id = user.id)
+      let query = supabase
         .from('users')
-        .select('id, nombre_completo, email, role, company, is_active, created_at, last_login')
+        .select('id, nombre_completo, email, role, company, is_active, created_at, last_login, admin_id')
         .order('created_at', { ascending: false })
+
+      // Filtrar por admin_id si el usuario actual es admin (no super_admin)
+      if (user.role === 'admin') {
+        console.log('[GET /api/users] Filtrando por admin_id:', user.id, 'para usuario:', user.email)
+        query = query.eq('admin_id', user.id)
+      } else {
+        console.log('[GET /api/users] Super admin, sin filtro')
+      }
+
+      const { data: users, error: usersError } = await query
+
+      console.log('[GET /api/users] Usuarios encontrados:', users?.length || 0)
 
       if (usersError) {
         console.error('Error obteniendo usuarios:', usersError)
@@ -32,14 +45,20 @@ export async function GET(request: NextRequest) {
   })(request)
 }
 
+
 export async function POST(request: NextRequest) {
   return withPermission('users:write', async (request, currentUser) => {
     try {
-      const { name, email, role, sendInvite } = await request.json()
+      const { name, email, password, role } = await request.json()
 
       // Validaciones básicas
-      if (!name || !email || !role) {
-        return createErrorResponse('Faltan campos requeridos', 400)
+      if (!name || !email || !password || !role) {
+        return createErrorResponse('Faltan campos requeridos (nombre, email, contraseña, rol)', 400)
+      }
+
+      // Validar contraseña
+      if (password.length < 6) {
+        return createErrorResponse('La contraseña debe tener al menos 6 caracteres', 400)
       }
 
       // Validar rol usando el nuevo sistema
@@ -58,13 +77,10 @@ export async function POST(request: NextRequest) {
         return createErrorResponse('El email ya está en uso', 400)
       }
 
-      // Generar contraseña temporal
-      const tempPassword = Math.random().toString(36).slice(-8)
-
-      // Crear nuevo usuario en Supabase Auth
+      // Crear nuevo usuario en Supabase Auth con la contraseña proporcionada
       const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
         email,
-        password: tempPassword,
+        password,
         email_confirm: true
       })
 
@@ -74,6 +90,10 @@ export async function POST(request: NextRequest) {
       }
 
       // Crear registro en la tabla users
+      // Si el rol es 'user', se vincula con el admin que lo crea (admin_id)
+      const adminIdToSave = role === 'user' ? currentUser.id : null
+      console.log('[POST /api/users] Creando usuario con admin_id:', adminIdToSave, 'por admin:', currentUser.email, 'ID:', currentUser.id)
+
       const { data: newUser, error: dbError } = await supabase
         .from('users')
         .insert({
@@ -83,6 +103,7 @@ export async function POST(request: NextRequest) {
           company: currentUser.company || 'VIRA',
           nombre_completo: name,
           is_active: true,
+          admin_id: adminIdToSave,
           last_login: new Date().toISOString()
         })
         .select()
@@ -95,18 +116,9 @@ export async function POST(request: NextRequest) {
         return createErrorResponse('Error al crear usuario', 500)
       }
 
-      // En producción, aquí enviarías un email de invitación
-      if (sendInvite) {
-        // TODO: Implementar envío real de email con enlace de reset password
-        // El usuario deberá usar "Olvidé mi contraseña" para establecer su clave
-        // await sendPasswordResetEmail(newUser.email)
-      }
-
-      // ✅ SEGURIDAD: No enviar tempPassword en response
-      // El usuario debe usar flujo de reset password para establecer su clave
       return createSuccessResponse({
         user: newUser,
-        message: 'Usuario creado exitosamente. El usuario debe restablecer su contraseña para acceder.'
+        message: 'Usuario creado exitosamente'
       })
 
     } catch (error) {

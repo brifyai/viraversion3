@@ -13,7 +13,6 @@ export interface AuthenticatedUser {
   admin_id?: string  // ID del admin padre (para usuarios dependientes)
   name?: string
   company?: string
-  plan?: string
 }
 
 export interface AuthResult {
@@ -40,13 +39,15 @@ export async function authenticate(request: NextRequest): Promise<AuthResult> {
     }
 
     // Obtener información adicional del usuario desde la base de datos
+    // Nota: Buscamos por email porque el ID de Supabase Auth puede diferir del ID en la tabla users
     const { data: userData, error } = await supabaseAdmin
       .from('users')
-      .select('id, email, role, nombre_completo, company, plan, admin_id')
-      .eq('id', user.id)
+      .select('id, email, role, nombre_completo, company, admin_id')
+      .eq('email', user.email)
       .single()
 
     if (error || !userData) {
+      console.error('[authenticate] Usuario no encontrado en tabla users:', user.email, error?.message)
       return {
         success: false,
         error: 'Usuario no encontrado',
@@ -62,8 +63,7 @@ export async function authenticate(request: NextRequest): Promise<AuthResult> {
         role: userData.role as UserRole,
         admin_id: userData.admin_id || undefined,
         name: userData.nombre_completo || undefined,
-        company: userData.company || undefined,
-        plan: userData.plan || undefined
+        company: userData.company || undefined
       }
     }
   } catch (error) {

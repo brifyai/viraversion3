@@ -10,13 +10,11 @@ import {
   Layout,
   Zap,
   FolderOpen,
-  BookOpen,
   Settings,
   Radio,
   AlertCircle,
   User,
   Users,
-  CreditCard,
   LogOut,
   Menu,
   Clock,
@@ -71,12 +69,13 @@ const allNavigationItems = [
     icon: FolderOpen,
     roles: ['super_admin', 'admin', 'user'],
   },
-  {
-    name: 'Bibliotecas',
-    href: '/bibliotecas',
-    icon: BookOpen,
-    roles: ['super_admin', 'admin', 'user'],
-  },
+  // Bibliotecas oculta temporalmente
+  // {
+  //   name: 'Bibliotecas',
+  //   href: '/bibliotecas',
+  //   icon: BookOpen,
+  //   roles: ['super_admin', 'admin', 'user'],
+  // },
   {
     name: 'Mis Usuarios',
     href: '/admin/usuarios',
@@ -229,8 +228,8 @@ export function Navigation() {
                     Mi Perfil
                   </Link>
 
-                  {/* Facturación solo para admin y super_admin */}
-                  {(userRole === 'admin' || userRole === 'super_admin') && (
+                  {/* Facturación oculta temporalmente */}
+                  {/* {(userRole === 'admin' || userRole === 'super_admin') && (
                     <Link
                       href="/pagos"
                       className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
@@ -239,7 +238,7 @@ export function Navigation() {
                       <CreditCard className="h-4 w-4 mr-3" />
                       Facturación
                     </Link>
-                  )}
+                  )} */}
 
                   <div className="border-t border-gray-100">
                     <button

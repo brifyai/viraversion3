@@ -434,7 +434,7 @@ export default function ActivosPage() {
           <Card className="bg-white">
             <CardContent className="p-0">
               <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full grid-cols-3 bg-gray-50 p-1 rounded-none">
+                <TabsList className="grid w-full grid-cols-2 bg-gray-50 p-1 rounded-none">
                   <TabsTrigger
                     value="fuentes-noticias"
                     className="data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:border-b-2 data-[state=active]:border-blue-600"
@@ -449,13 +449,14 @@ export default function ActivosPage() {
                     <Radio className="h-4 w-4 mr-2" />
                     Radios
                   </TabsTrigger>
-                  <TabsTrigger
+                  {/* Tab Clonación de Voz oculta temporalmente */}
+                  {/* <TabsTrigger
                     value="clonacion-voz"
                     className="data-[state=active]:bg-white data-[state=active]:text-blue-600 data-[state=active]:border-b-2 data-[state=active]:border-blue-600"
                   >
                     <UserCheck className="h-4 w-4 mr-2" />
                     Clonación de Voz
-                  </TabsTrigger>
+                  </TabsTrigger> */}
                 </TabsList>
 
                 {/* Tab Content: Fuentes de Noticias */}
