@@ -220,8 +220,8 @@ export async function POST(request: NextRequest) {
     // ✅ WPM ADAPTATIVO - Basado en voz seleccionada y velocidad
     // Fórmula: voiceBaseWPM * (1 + speed/100) * CORRECTION_FACTOR
     // CORRECTION_FACTOR compensa la diferencia entre WPM teórico y real del TTS
-    // Historial: 0.81→corto, 0.90→12% largo, 0.82→objetivo actual
-    const CORRECTION_FACTOR = 0.82
+    // Historial: 0.81→corto, 0.90→12% largo, 0.82→corto con MasterSpeed+1, 0.95→calibración actual
+    const CORRECTION_FACTOR = 0.95
     const voiceBaseWPM = voiceWPM || 150  // WPM base de la voz (desde metadata)
     const speedAdjustment = 1 + ((voiceSettings?.speed ?? 1) / 100)  // Ajuste por velocidad
     const effectiveWPM = Math.round(voiceBaseWPM * speedAdjustment * CORRECTION_FACTOR)
@@ -308,6 +308,8 @@ export async function POST(request: NextRequest) {
 
     // 2. Selección de noticias (Manual vs Automática)
     let selectedNews: any[] = []
+    // ✅ Variable para tracking de noticias no encontradas (informar al usuario)
+    let missingNewsInfo: { requestedCount: number; foundCount: number; missingTitles: string[] } | null = null
 
     if (specificNewsUrls && specificNewsUrls.length > 0) {
       console.log(`🎯 Usando ${specificNewsUrls.length} URLs específicas`)
@@ -379,12 +381,34 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // ✅ Guardar info de noticias no encontradas para alertar al usuario
+
       if (selectedNews.length < specificNewsUrls.length) {
         console.warn(`⚠️ Solicitadas ${specificNewsUrls.length} noticias específicas, pero solo se encontraron ${selectedNews.length} en DB`)
-        // Log URLs no encontradas para debug
         const foundNormalizedUrls = new Set(selectedNews.map(n => normalizeUrl(n.url)))
-        const notFound = specificNewsUrls.filter((url: string) => !foundNormalizedUrls.has(normalizeUrl(url)))
-        console.warn(`   URLs no encontradas:`, notFound.slice(0, 3))
+        const notFoundUrls = specificNewsUrls.filter((url: string) => !foundNormalizedUrls.has(normalizeUrl(url)))
+
+        // Intentar obtener títulos de las noticias no encontradas desde la selección original
+        const missingTitles = notFoundUrls.map((url: string) => {
+          // Extraer un título legible de la URL
+          try {
+            const urlObj = new URL(url)
+            const pathParts = urlObj.pathname.split('/').filter(p => p)
+            const lastPart = pathParts[pathParts.length - 1] || 'Noticia'
+            return decodeURIComponent(lastPart.replace(/-/g, ' ').replace(/\.[^.]+$/, '')).substring(0, 80)
+          } catch {
+            return 'Noticia no identificada'
+          }
+        })
+
+        missingNewsInfo = {
+          requestedCount: specificNewsUrls.length,
+          foundCount: selectedNews.length,
+          missingTitles
+        }
+
+        console.warn(`   URLs no encontradas:`, notFoundUrls.slice(0, 3))
+        console.warn(`   Títulos:`, missingTitles)
       }
 
       console.log(`✅ Selección por URL completada: ${selectedNews.length} noticias`)
@@ -701,98 +725,144 @@ export async function POST(request: NextRequest) {
     // 🎬 Obtener transiciones para integrar en el contenido de cada noticia
     const newsTransitions = getTransitionsForNews(builtScript)
 
-    // B. Noticias con publicidad/cortinas intercaladas según plan del Director
-    for (let i = 0; i < noticiasValidas.length; i++) {
-      const news = noticiasValidas[i] as any
+    // Procesar en batches de 2 para evitar rate limiting (429) de Chutes AI
+    const BATCH_SIZE = 2  // Máximo 2 noticias en paralelo (antes: 3, causaba 429)
+    const BATCH_DELAY = 3000  // 3 segundos entre batches para evitar rate limiting
 
+    console.log(`⚡ === PROCESAMIENTO PARALELO ===`)
+    console.log(`   📦 Batch size: ${BATCH_SIZE} | Delay entre batches: ${BATCH_DELAY}ms`)
+    console.log(`   📰 Total noticias: ${noticiasValidas.length}`)
+
+    // Preparar datos de todas las noticias
+    const noticiasParaProcesar = noticiasValidas.map((news: any, i: number) => {
+      const palabrasBase = news.palabras_objetivo || 200
+      const previousCategory = i > 0 ? (noticiasValidas[i - 1] as any).categoria : null
+      const transitions = newsTransitions.get(news.id) || { preText: '', postText: '' }
+
+      return {
+        news,
+        index: i,
+        palabrasBase,
+        transitions,
+        transitionContext: {
+          index: i,
+          total: noticiasValidas.length,
+          category: news.categoria || 'general',
+          previousCategory
+        } as TransitionContext
+      }
+    })
+
+    // Procesar en batches paralelos
+    interface HumanizedResult {
+      index: number
+      news: any
+      content: string
+      tokensUsed: number
+      cost: number
+      success: boolean
+      transitions: { preText: string; postText: string }
+    }
+
+    const resultadosHumanizados: HumanizedResult[] = []
+
+    for (let batchStart = 0; batchStart < noticiasParaProcesar.length; batchStart += BATCH_SIZE) {
+      const batch = noticiasParaProcesar.slice(batchStart, batchStart + BATCH_SIZE)
+      const batchNum = Math.floor(batchStart / BATCH_SIZE) + 1
+      const totalBatches = Math.ceil(noticiasParaProcesar.length / BATCH_SIZE)
+
+      console.log(`\n⚡ Batch ${batchNum}/${totalBatches} (${batch.length} noticias en paralelo)`)
+
+      // Procesar batch en paralelo
+      const batchPromises = batch.map(async (item) => {
+        const { news, index, palabrasBase, transitions, transitionContext } = item
+
+        console.log(`   🧠 [${index + 1}] ${news.titulo?.substring(0, 50)}...`)
+
+        const rawContent = news.contenido || news.resumen || ''
+        const sanitizedContent = sanitizeForTTS(rawContent)
+
+        try {
+          const humanizedResult = await humanizeText(
+            sanitizedContent,
+            region,
+            userId,
+            transitionContext,
+            { targetWordCount: palabrasBase }
+          )
+
+          // Integrar transiciones
+          let finalContent = humanizedResult.content
+          if (transitions.preText) finalContent = transitions.preText + ' ' + finalContent
+          if (transitions.postText) finalContent = finalContent + ' ' + transitions.postText
+
+          console.log(`   ✅ [${index + 1}] Humanizado: ${finalContent.split(' ').length} palabras`)
+
+          return {
+            index,
+            news,
+            content: finalContent,
+            tokensUsed: humanizedResult.tokensUsed,
+            cost: humanizedResult.cost,
+            success: true,
+            transitions
+          }
+        } catch (error: any) {
+          console.error(`   ❌ [${index + 1}] Error: ${error.message}`)
+          // Fallback: usar contenido sanitizado con límite de palabras
+          const fallbackContent = sanitizedContent.split(' ').slice(0, palabrasBase).join(' ')
+          return {
+            index,
+            news,
+            content: fallbackContent,
+            tokensUsed: 0,
+            cost: 0,
+            success: false,
+            transitions
+          }
+        }
+      })
+
+      // Esperar a que termine el batch completo
+      const batchResults = await Promise.all(batchPromises)
+      resultadosHumanizados.push(...batchResults)
+
+      // Delay entre batches (NO después del último)
+      if (batchStart + BATCH_SIZE < noticiasParaProcesar.length) {
+        console.log(`   ⏳ Esperando ${BATCH_DELAY}ms antes del siguiente batch...`)
+        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY))
+      }
+    }
+
+    // Ordenar resultados por índice original (mantener orden del Director)
+    resultadosHumanizados.sort((a, b) => a.index - b.index)
+
+    console.log(`\n✅ Procesamiento paralelo completado: ${resultadosHumanizados.length} noticias`)
+    console.log(`   ✓ Exitosas: ${resultadosHumanizados.filter(r => r.success).length}`)
+    console.log(`   ✗ Fallback: ${resultadosHumanizados.filter(r => !r.success).length}`)
+
+    // Construir timeline con resultados humanizados
+    for (const resultado of resultadosHumanizados) {
       if (currentDuration >= targetDuration) break
 
-      // ✅ MEJORA: Sin buffer extra - el re-procesamiento maneja excesos
-      const palabrasBase = news.palabras_objetivo || 200
-      const palabrasConCompensacion = palabrasBase + Math.round(deficitAcumulado / 60 * effectiveWPM)
+      const { news, content, tokensUsed, cost, index, transitions } = resultado
 
-      // 🎬 Obtener transiciones para esta noticia
-      const transitions = newsTransitions.get(news.id) || { preText: '', postText: '' }
-      if (transitions.preText) {
-        console.log(`   🎬 Transición: "${transitions.preText.substring(0, 40)}..."`)
-      }
+      // Actualizar contadores
+      totalTokens += tokensUsed
+      totalCost += cost
 
-      console.log(`🧠 Procesando noticia ${i + 1}/${noticiasValidas.length}: ${news.titulo}`)
-      console.log(`   📝 Palabras objetivo: ${palabrasConCompensacion}${deficitAcumulado > 0 ? ` (+${Math.round(deficitAcumulado)}s compensación)` : ''}`)
-
-      // CRITICAL: Sanitize text BEFORE humanization to prevent CUDA errors with raw metadata
-      const rawContent = news.contenido || news.resumen || '';
-      const sanitizedContent = sanitizeForTTS(rawContent);
-
-      // Contexto para transiciones naturales
-      const previousCategory = i > 0 ? (noticiasValidas[i - 1] as any).categoria : null
-      const transitionContext: TransitionContext = {
-        index: i,
-        total: noticiasValidas.length,
-        category: news.categoria || 'general',
-        previousCategory
-      }
-
-      // Pasar objetivo de palabras con compensación
-      const humanizedResult = await humanizeText(
-        sanitizedContent,
-        region,
-        userId,
-        transitionContext,
-        { targetWordCount: palabrasConCompensacion }
-      )
-
-      // 🎬 INTEGRAR transiciones en el contenido (NO como items separados)
-      let finalContent = humanizedResult.content
-      if (transitions.preText) {
-        finalContent = transitions.preText + ' ' + finalContent
-      }
-      if (transitions.postText) {
-        finalContent = finalContent + ' ' + transitions.postText
-      }
-
-      // ✅ MEJORA: Delay ANTES de la siguiente humanización para evitar 429 en producción
-      // En producción las peticiones van mucho más rápido que en dev
-      if (i < noticiasValidas.length - 1) {  // No esperar después de la última noticia
-        const baseDelay = 4000  // 4 segundos base (antes 2.5s)
-        const progressiveDelay = baseDelay + (i * 350)  // +350ms por cada noticia (antes 300ms)
-        await new Promise(resolve => setTimeout(resolve, progressiveDelay))
-      }
-
-      // Actualizar contadores de tokens y costos
-      totalTokens += humanizedResult.tokensUsed
-      totalCost += humanizedResult.cost
-
-      const wordCount = finalContent.split(' ').length
-
-      // ✅ Estimar duración usando WPM (audio se genera después en finalize)
+      const wordCount = content.split(' ').length
       const estimatedDuration = Math.ceil((wordCount / effectiveWPM) * 60)
 
-      // ✅ Calcular déficit para compensar en siguiente noticia
-      const duracionObjetivo = news.segundos_asignados || Math.round(palabrasConCompensacion / effectiveWPM * 60)
-      const diferencia = duracionObjetivo - estimatedDuration
-
-      if (Math.abs(diferencia) > 5) {  // Solo si la diferencia es significativa (>5s)
-        deficitAcumulado += diferencia
-        if (diferencia > 0) {
-          console.log(`   ⚠️ Déficit: ${Math.round(diferencia)}s → Compensando en siguiente noticia`)
-        } else {
-          console.log(`   📈 Superávit: ${Math.round(-diferencia)}s → Reduciendo siguiente noticia`)
-        }
-      } else {
-        // Si está muy cercano al objetivo, reducir gradualmente el déficit acumulado
-        deficitAcumulado = Math.round(deficitAcumulado * 0.5)
-      }
-
-      console.log(`   📊 Palabras: ${wordCount} | Duración estimada: ${Math.round(estimatedDuration)}s | Objetivo: ${duracionObjetivo}s`)
+      console.log(`   📊 [${index + 1}] Palabras: ${wordCount} | Duración: ${estimatedDuration}s`)
 
       const newsItem: any = {
         id: news.id,
         type: 'news',
         title: news.titulo,
         originalContent: news.contenido,
-        content: finalContent,
-        duration: estimatedDuration,  // Estimación (se actualiza con duración real en finalize)
+        content: content,
+        duration: estimatedDuration,
         source: news.fuente,
         category: news.categoria,
         isHumanized: true,
@@ -800,28 +870,24 @@ export async function POST(request: NextRequest) {
         voiceId: voiceModel || 'default',
         hasTransition: !!transitions.preText,
         hasComment: !!transitions.postText
-        // Audio se genera en finalize-newscast
       }
 
       timeline.push(newsItem)
       currentDuration += newsItem.duration
 
-      // 🎬 Insertar cortina/publicidad según plan del Director
-      const ordenActual = i + 1
+      // 🎬 Insertar publicidades según plan del Director
+      const ordenActual = index + 1
       const insercionesAqui = plan.inserciones.filter(ins => ins.despues_de_orden === ordenActual)
 
       for (const insercion of insercionesAqui) {
-        // NOTA: Las cortinas ahora se manejan via audio-placement.ts (no placeholders)
-        // Solo procesamos publicidades aquí
         if (insercion.tipo === 'publicidad' && campaigns && campaigns.length > 0) {
-          // Buscar la publicidad específica o usar rotación
           let currentAd = campaigns.find((c: any) => c.id === insercion.publicidad_id)
           if (!currentAd) {
             currentAd = campaigns[adRotationIndex % campaigns.length]
             adRotationIndex++
           }
 
-          console.log(`📢 Insertando publicidad (${timeline.filter(t => t.type === 'advertisement').length + 1}/${adCount}): ${currentAd.nombre}`)
+          console.log(`📢 Insertando publicidad: ${currentAd.nombre}`)
 
           timeline.push({
             id: `ad-${ordenActual}`,
@@ -836,15 +902,17 @@ export async function POST(request: NextRequest) {
 
           currentDuration += currentAd.duracion_segundos || 25
 
-          // Actualizar contador de reproducciones
-          await supabase
-            .from('campanas_publicitarias')
-            .update({ reproducciones: (currentAd.reproducciones || 0) + 1 })
-            .eq('id', currentAd.id)
+          // Actualizar contador de reproducciones (no bloquea)
+          void (async () => {
+            try {
+              await supabase
+                .from('campanas_publicitarias')
+                .update({ reproducciones: (currentAd.reproducciones || 0) + 1 })
+                .eq('id', currentAd.id)
+            } catch { /* ignore */ }
+          })()
         }
       }
-
-      // Cortinas ahora manejadas por el plan del Director
     }
 
     // C.1 Aplicar colocación inteligente de audio (si está habilitado)
@@ -920,8 +988,9 @@ export async function POST(request: NextRequest) {
       const cierrePrompt = `Genera un cierre de noticiero de aproximadamente ${palabrasCierre} palabras.
 Resume brevemente las siguientes noticias que se cubrieron: ${noticiasCubiertas}
 Usa tono profesional de radio chilena (como Cooperativa o Bío-Bío).
-Incluye una despedida cordial mencionando "${displayName}".
-NO uses emojis ni caracteres especiales.`
+La despedida debe mencionar "${displayName}" pero NO uses nombres de locutores ni placeholders como [Nombre].
+Ejemplo de cierre: "Esto ha sido todo por hoy en ${displayName}. Les deseamos una excelente tarde. ¡Hasta la próxima!"
+NO uses corchetes, emojis ni caracteres especiales. El texto debe quedar listo para leer en voz alta.`
 
       let cierreExtendido = ''
       try {
@@ -1025,11 +1094,12 @@ NO uses emojis ni caracteres especiales.`
           config,
           news_count: selectedNews.length,
           ads_count: timeline.filter(t => t.type === 'advertisement').length,
-          // ✅ NUEVO: Guardar configuración de voz usada
           voice_settings: voiceSettings,
           voice_model: voiceModel,
           wpm_used: effectiveWPM,
-          generated_at: new Date().toISOString()
+          generated_at: new Date().toISOString(),
+          // ✅ NUEVO: Info de noticias no encontradas para alertar al usuario
+          missing_news: missingNewsInfo
         }
       })
       .select()
@@ -1061,7 +1131,13 @@ NO uses emojis ni caracteres especiales.`
       success: true,
       newscastId: noticiero.id,
       timeline,
-      duration: currentDuration
+      duration: currentDuration,
+      // ✅ NUEVO: Incluir warnings para que frontend pueda alertar
+      warnings: missingNewsInfo ? {
+        type: 'missing_news',
+        message: `${missingNewsInfo.requestedCount - missingNewsInfo.foundCount} noticia(s) no encontrada(s) en la base de datos`,
+        details: missingNewsInfo
+      } : null
     })
 
   } catch (error: any) {

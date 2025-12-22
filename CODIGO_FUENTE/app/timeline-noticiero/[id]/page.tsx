@@ -371,6 +371,29 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
           console.log('🎵 Música de fondo cargada:', data.background_music_url)
         }
 
+        // ✅ NUEVO: Verificar si hay noticias que no se encontraron y alertar al usuario
+        const metadata = data.metadata as any
+        if (metadata?.missing_news && metadata.missing_news.missingTitles?.length > 0) {
+          const { requestedCount, foundCount, missingTitles } = metadata.missing_news
+          const missingCount = requestedCount - foundCount
+
+          // Mostrar toast con información de las noticias faltantes
+          setTimeout(() => {
+            toast.warning(
+              <div>
+                <strong>⚠️ {missingCount} noticia{missingCount > 1 ? 's' : ''} no encontrada{missingCount > 1 ? 's' : ''}</strong>
+                <ul className="mt-2 text-sm list-disc pl-4">
+                  {missingTitles.slice(0, 3).map((title: string, i: number) => (
+                    <li key={i} className="truncate max-w-xs">{title}</li>
+                  ))}
+                  {missingTitles.length > 3 && <li>...y {missingTitles.length - 3} más</li>}
+                </ul>
+              </div>,
+              { autoClose: 10000 }
+            )
+          }, 1000)
+        }
+
       } catch (err) {
         console.error('❌ Error cargando:', err)
         setError(err instanceof Error ? err.message : 'Error desconocido')

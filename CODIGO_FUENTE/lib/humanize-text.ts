@@ -116,7 +116,7 @@ interface HumanizeResult {
 }
 
 // ✅ NUEVO: Función para forzar límite estricto de palabras
-// Trunca el texto al objetivo + 5% de tolerancia, cortando en oración completa
+// Trunca el texto al objetivo + 5% de tolerancia, cortando SIEMPRE en oración completa
 function enforceWordLimit(text: string, targetWords: number, tolerance: number = 0.05): string {
     const words = text.split(/\s+/)
     const maxWords = Math.ceil(targetWords * (1 + tolerance))
@@ -129,20 +129,29 @@ function enforceWordLimit(text: string, targetWords: number, tolerance: number =
     // Truncar al máximo de palabras
     const truncated = words.slice(0, maxWords).join(' ')
 
-    // Buscar última oración completa (punto seguido de espacio o fin)
+    // Buscar última oración completa (punto, ? o !)
     const lastPeriodIndex = truncated.lastIndexOf('.')
     const lastQuestionIndex = truncated.lastIndexOf('?')
     const lastExclamIndex = truncated.lastIndexOf('!')
 
     const lastSentenceEnd = Math.max(lastPeriodIndex, lastQuestionIndex, lastExclamIndex)
 
-    // Si hay una oración completa en el 80% del texto, cortar ahí
-    if (lastSentenceEnd > truncated.length * 0.8) {
+    // ✅ MEJORADO: Siempre cortar en oración completa si hay una en al menos el 50% del texto
+    // Antes era 80%, lo que causaba oraciones incompletas
+    if (lastSentenceEnd > truncated.length * 0.5) {
         return truncated.substring(0, lastSentenceEnd + 1)
     }
 
-    // Si no, agregar punto al final
-    return truncated.trim() + '.'
+    // Si no hay oración completa en el 50%, buscar más atrás
+    // Intentar encontrar cualquier punto
+    if (lastSentenceEnd > 0) {
+        console.log(`   ⚠️ Cortando en oración lejana para evitar texto incompleto`)
+        return truncated.substring(0, lastSentenceEnd + 1)
+    }
+
+    // Si realmente no hay puntos, es mejor no truncar que dejar texto incompleto
+    console.log(`   ⚠️ No se encontró fin de oración, manteniendo texto original`)
+    return text
 }
 
 // Frases de transición por categoría
@@ -273,6 +282,8 @@ export async function humanizeText(
 - **Usar un lenguaje radial chileno estándar y coloquial.** Ej: "chocó por detrás", "quedó grave", "fue detenido".
 - **Construir una mini-narrativa:** Conectar los hechos de forma lógica (qué pasó, dónde, consecuencias, estado de la investigación).
 - **Cerrar con una frase que dé un sentido de conclusión** al bloque informativo.
+- **CORREGIR ERRORES DE TEXTO:** Si ves "(s)" después de un cargo, ELIMÍNALO completamente (ej: "Seremi (s) de Salud" → "Seremi de Salud")
+- **CORREGIR TYPOS:** Arregla errores como "Gustav0" → "Gustavo", "G0biern0" → "Gobierno"
 
 ❌ NUNCA:
 - Escribas una sucesión de oraciones ultra-cortas y desconectadas (estilo "punto, punto, punto").
@@ -305,6 +316,14 @@ DEVUELVES ÚNICAMENTE el guion final. Nada más.`
 - O simplemente presenta la noticia directamente sin referencias geográficas redundantes
 - Conecta las frases de forma natural, conversacional
 - Termina con una frase relevante para los oyentes locales
+
+📍 **REGLA GEOGRÁFICA ABSOLUTA:**
+- **SI la noticia menciona** ciudades/seremis/municipalidades de ${region} → Es LOCAL
+- **SI la noticia menciona** otras regiones (Biobío, Valparaíso, etc.) → Es de OTRA REGIÓN
+- **LOCAL:** Usa "aquí en ${region}", "nuestra región"
+- **OTRA REGIÓN:** Usa "desde [esa región]", "en [esa región]"
+
+📌 **EJEMPLO:** Si dice "seremi del Biobío" y tu radio es de Ñuble → "Desde el Biobío..."
 
 📰 **INFORMACIÓN BASE:**
 "${cleanedText}"
@@ -403,37 +422,26 @@ ${transitionPhrase ? `👉 **ARRANCA CON:** "${transitionPhrase}"` : ''}
             const reductionTopic = extractTopicFromContent(humanizedContent)
 
             // Prompt v6 - Reducción TTS + Anti-Comas + Anclaje Temático
-            const strictPrompt = `Eres un editor de radio chilena. 
-Debes REDUCIR este texto a ${targetWords} palabras, **sin cambiar el tema ni los hechos**.
+            const strictPrompt = `Eres locutor de radio chilena reduciendo una noticia.
 
-📌 TEMA CENTRAL: "${reductionTopic}"
+🎯 **TEMA EXCLUSIVO:** "${reductionTopic}"
+- Solo esto, nada más. Sin temas relacionados.
 
-⚠️ REGLAS ABSOLUTAS:
-- **NO cambies el tema**. Si el texto habla de X, **solo habla de X**.
-- **NO menciones temas no presentes** en el texto original (política, economía, personas, etc).
-- **CERO comas innecesarias**. Máximo 14 palabras por oración.
-- **Cada oración = un solo hecho**.
-- **Nunca** uses punto y coma, dos puntos, guiones largos o paréntesis.
-- **No agregues, interpretes ni relaciones** nada fuera del texto original.
-- Usa vocabulario chileno: "Carabineros", "municipalidad", "alcalde".
+🗣️ **REDUCE HABLANDO:**
+- Imagina que cuentas esto brevemente a un oyente
+- Usa frases directas y naturales
+- Corrige errores como "(s)" y "Gustav0" automáticamente
+- Eres de ${region}, hablas para ${region}
 
-🎙️ ESTILO DE LOCUCIÓN:
-- El texto debe sonar como un locutor de radio pública chilena.
-- Frases cortas. Pausas claras. Ritmo constante.
-- Si debes hacer pausa para respirar → eso debió ser un punto.
+📏 **EXTENSIÓN:** Aproximadamente ${targetWords} palabras
+- Elimina lo redundante, mantén lo esencial
+- Une ideas relacionadas con "y", "pero"
+- Termina con un mensaje o conclusión clara
 
-✂️ REDUCCIÓN:
-- Elimina frases redundantes.
-- **Mejor eliminar información que forzar dos ideas en una oración**.
-- Prioriza: hecho principal → quién → qué → dónde.
+📝 **TEXTO CON POSIBLES ERRORES:**
+"${humanizedContent}"
 
-✅ SALIDA:
-- Texto continuo, sin saltos de línea.
-- Termina en una oración completa.
-- **SOLO el texto final sobre "${reductionTopic}". Nada más.**
-
-TEXTO A REDUCIR:
-"${humanizedContent}"`
+→ Solo tu versión reducida y corregida, lista para leer al aire.`
 
             try {
                 const reprocessResponse = await fetchWithRetry(
@@ -483,9 +491,9 @@ TEXTO A REDUCIR:
             }
         }
 
-        // ✅ NUEVO: Forzar límite de palabras estricto después de humanización
-        // Evita que el audio sea más largo que lo estimado
-        humanizedContent = enforceWordLimit(humanizedContent, targetWords)
+        // ✅ NOTA: Se eliminó enforceWordLimit aquí.
+        // La IA ya reduce el texto de forma inteligente (líneas 405-492),
+        // garantizando oraciones completas sin truncamiento abrupto.
 
         // ✅ ANTI-REPETICIÓN: Detectar y corregir repeticiones
         const repetitionAnalysis = detectRepetitions(humanizedContent)
@@ -530,7 +538,7 @@ TEXTO A REDUCIR:
 
                         if (retryAnalysis.score > repetitionAnalysis.score) {
                             console.log(`   ✅ Corrección exitosa: score ${repetitionAnalysis.score} → ${retryAnalysis.score}`)
-                            humanizedContent = enforceWordLimit(correctedContent, targetWords)
+                            humanizedContent = correctedContent // Sin enforceWordLimit para evitar truncamiento
 
                             // Registrar tokens del reintento
                             const retryTokens = Math.ceil((correctivePrompt.length + correctedContent.length) / 4)
