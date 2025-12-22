@@ -8,6 +8,7 @@
 import { logTokenUsage, calculateChutesAICost } from './usage-logger'
 import { CHUTES_CONFIG, getChutesHeaders } from './chutes-config'
 import { fetchWithRetry } from './utils'
+import { detectRepetitions, buildCorrectivePrompt, type RepetitionAnalysis } from './text-validation'
 
 // ==================================================
 // PREPARACIÓN DE CONTENIDO ANTES DE ENVIAR A IA
@@ -112,6 +113,36 @@ interface HumanizeResult {
     content: string
     tokensUsed: number
     cost: number
+}
+
+// ✅ NUEVO: Función para forzar límite estricto de palabras
+// Trunca el texto al objetivo + 5% de tolerancia, cortando en oración completa
+function enforceWordLimit(text: string, targetWords: number, tolerance: number = 0.05): string {
+    const words = text.split(/\s+/)
+    const maxWords = Math.ceil(targetWords * (1 + tolerance))
+
+    // Si está dentro del límite, retornar tal cual
+    if (words.length <= maxWords) return text
+
+    console.log(`   ✂️ Truncando: ${words.length} → ${maxWords} palabras`)
+
+    // Truncar al máximo de palabras
+    const truncated = words.slice(0, maxWords).join(' ')
+
+    // Buscar última oración completa (punto seguido de espacio o fin)
+    const lastPeriodIndex = truncated.lastIndexOf('.')
+    const lastQuestionIndex = truncated.lastIndexOf('?')
+    const lastExclamIndex = truncated.lastIndexOf('!')
+
+    const lastSentenceEnd = Math.max(lastPeriodIndex, lastQuestionIndex, lastExclamIndex)
+
+    // Si hay una oración completa en el 80% del texto, cortar ahí
+    if (lastSentenceEnd > truncated.length * 0.8) {
+        return truncated.substring(0, lastSentenceEnd + 1)
+    }
+
+    // Si no, agregar punto al final
+    return truncated.trim() + '.'
 }
 
 // Frases de transición por categoría
@@ -440,6 +471,77 @@ TEXTO A REDUCIR:
                 console.warn('⚠️ Error en re-procesamiento, usando contenido original:', reprocessError)
                 // Continuar con el contenido original si falla el re-procesamiento
             }
+        }
+
+        // ✅ NUEVO: Forzar límite de palabras estricto después de humanización
+        // Evita que el audio sea más largo que lo estimado
+        humanizedContent = enforceWordLimit(humanizedContent, targetWords)
+
+        // ✅ ANTI-REPETICIÓN: Detectar y corregir repeticiones
+        const repetitionAnalysis = detectRepetitions(humanizedContent)
+
+        if (!repetitionAnalysis.isValid) {
+            console.warn(`⚠️ Repeticiones detectadas (score: ${repetitionAnalysis.score}):`,
+                repetitionAnalysis.issues.map(i => i.details).join(', '))
+
+            // Intentar corregir con prompt correctivo
+            try {
+                const correctivePrompt = buildCorrectivePrompt(
+                    repetitionAnalysis.issues,
+                    humanizedContent,
+                    targetWords
+                )
+
+                const retryResponse = await fetchWithRetry(
+                    CHUTES_CONFIG.endpoints.chatCompletions,
+                    {
+                        method: 'POST',
+                        headers: getChutesHeaders(),
+                        body: JSON.stringify({
+                            model: CHUTES_CONFIG.model,
+                            messages: [
+                                { role: 'system', content: 'Eres un editor de radio chilena. Corrige textos con repeticiones para TTS.' },
+                                { role: 'user', content: correctivePrompt }
+                            ],
+                            max_tokens: Math.max(600, targetWords * 4),
+                            temperature: 0.7  // Más alto para mayor variación
+                        })
+                    },
+                    { retries: 2, backoff: 2000 }
+                )
+
+                if (retryResponse.ok) {
+                    const retryData = await retryResponse.json()
+                    const correctedContent = retryData.choices?.[0]?.message?.content?.trim()
+
+                    if (correctedContent) {
+                        // Verificar que la corrección es mejor
+                        const retryAnalysis = detectRepetitions(correctedContent)
+
+                        if (retryAnalysis.score > repetitionAnalysis.score) {
+                            console.log(`   ✅ Corrección exitosa: score ${repetitionAnalysis.score} → ${retryAnalysis.score}`)
+                            humanizedContent = enforceWordLimit(correctedContent, targetWords)
+
+                            // Registrar tokens del reintento
+                            const retryTokens = Math.ceil((correctivePrompt.length + correctedContent.length) / 4)
+                            await logTokenUsage({
+                                user_id: userId,
+                                servicio: 'chutes',
+                                operacion: 'humanizacion_anti_repeticion',
+                                tokens_usados: retryTokens,
+                                costo: calculateChutesAICost(retryTokens)
+                            })
+                        } else {
+                            console.warn(`   ⚠️ Corrección no mejoró (score: ${retryAnalysis.score}), manteniendo original`)
+                        }
+                    }
+                }
+            } catch (retryError) {
+                console.warn('⚠️ Error en reintento anti-repetición:', retryError)
+                // Continuar con el contenido original
+            }
+        } else {
+            console.log(`   ✓ Texto sin repeticiones (score: ${repetitionAnalysis.score})`)
         }
 
         // Calcular tokens de salida

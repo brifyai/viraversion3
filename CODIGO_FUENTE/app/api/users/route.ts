@@ -97,14 +97,16 @@ export async function POST(request: NextRequest) {
 
       // En producción, aquí enviarías un email de invitación
       if (sendInvite) {
-        // TODO: Implementar envío real de email
-        // await sendInvitationEmail(newUser, tempPassword)
+        // TODO: Implementar envío real de email con enlace de reset password
+        // El usuario deberá usar "Olvidé mi contraseña" para establecer su clave
+        // await sendPasswordResetEmail(newUser.email)
       }
 
+      // ✅ SEGURIDAD: No enviar tempPassword en response
+      // El usuario debe usar flujo de reset password para establecer su clave
       return createSuccessResponse({
         user: newUser,
-        tempPassword: sendInvite ? tempPassword : undefined,
-        message: 'Usuario creado exitosamente'
+        message: 'Usuario creado exitosamente. El usuario debe restablecer su contraseña para acceder.'
       })
 
     } catch (error) {

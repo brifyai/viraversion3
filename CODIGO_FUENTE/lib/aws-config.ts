@@ -1,4 +1,6 @@
 
+import 'server-only';
+
 import { S3Client } from "@aws-sdk/client-s3"
 
 // Configuración del bucket S3
@@ -34,13 +36,13 @@ export function createS3Client() {
 export function validateS3Config(): { isValid: boolean; missing: string[] } {
   const required = [
     'AWS_BUCKET_NAME',
-    'AWS_ACCESS_KEY_ID', 
+    'AWS_ACCESS_KEY_ID',
     'AWS_SECRET_ACCESS_KEY',
     'AWS_REGION'
   ]
-  
+
   const missing = required.filter(key => !process.env[key])
-  
+
   return {
     isValid: missing.length === 0,
     missing

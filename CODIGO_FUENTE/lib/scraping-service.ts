@@ -6,6 +6,8 @@
 // No importar desde componentes cliente
 // ==================================================
 
+import 'server-only';
+
 import { supabase } from './supabase'
 
 // Tipos

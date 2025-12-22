@@ -220,9 +220,8 @@ export async function POST(request: NextRequest) {
     // ✅ WPM ADAPTATIVO - Basado en voz seleccionada y velocidad
     // Fórmula: voiceBaseWPM * (1 + speed/100) * CORRECTION_FACTOR
     // CORRECTION_FACTOR compensa la diferencia entre WPM teórico y real del TTS
-    // Test 12/19: Timeline 9:07, Audio 8:09 (-58s, ~10% corto) → aumentar factor de 0.81 a 0.90
-    // Factor MAYOR = más palabras generadas = audio más largo
-    const CORRECTION_FACTOR = 0.90
+    // Historial: 0.81→corto, 0.90→12% largo, 0.82→objetivo actual
+    const CORRECTION_FACTOR = 0.82
     const voiceBaseWPM = voiceWPM || 150  // WPM base de la voz (desde metadata)
     const speedAdjustment = 1 + ((voiceSettings?.speed ?? 1) / 100)  // Ajuste por velocidad
     const effectiveWPM = Math.round(voiceBaseWPM * speedAdjustment * CORRECTION_FACTOR)

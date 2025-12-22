@@ -2,6 +2,14 @@
 
 import { Slider } from '@/components/ui/slider'
 import { Clock, AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
+import {
+    CORRECTION_FACTOR,
+    INTRO_DURATION,
+    OUTRO_DURATION,
+    AD_DURATION,
+    SILENCE_GAP,
+    WORDS_PER_NEWS
+} from '@/lib/duration-constants'
 
 interface DurationSliderProps {
     duration: number
@@ -13,14 +21,6 @@ interface DurationSliderProps {
     voiceWPM?: number           // WPM de la voz seleccionada
     voiceSpeed?: number         // Velocidad configurada (+13 default)
 }
-
-// Constantes sincronizadas con backend (route.ts y tts-providers.ts)
-const CORRECTION_FACTOR = 0.90
-const INTRO_DURATION = 12       // Sincronizado con route.ts
-const OUTRO_DURATION = 6        // Sincronizado con route.ts
-const AD_DURATION = 33          // Duración real de publicidad
-const SILENCE_GAP = 1.5         // Silencio entre noticias
-const WORDS_PER_NEWS = 100      // Palabras promedio por noticia humanizada
 
 export function DurationSlider({
     duration,

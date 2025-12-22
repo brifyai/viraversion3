@@ -2,6 +2,8 @@
  * Cliente Supabase para SERVER ONLY
  * Solo importar en API routes, Server Components, middleware
  */
+import 'server-only';
+
 import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
@@ -66,20 +68,12 @@ export const supabaseAdmin = createClient(
  * ✅ MEJORA: Usa cliente read-only para evitar "Already Used" en operaciones largas
  */
 export async function getSupabaseSession() {
-    console.log('🔐 [getSupabaseSession] Starting session check...')
 
     // ✅ Usar cliente read-only para no refrescar tokens durante operaciones largas
     const supabase = await createSupabaseServerReadOnly()
     const { data: { user }, error } = await supabase.auth.getUser()
 
-    console.log('🔐 [getSupabaseSession] Auth result:', {
-        hasUser: !!user,
-        userEmail: user?.email,
-        error: error?.message
-    })
-
     if (error || !user) {
-        console.log('🔐 [getSupabaseSession] No authenticated user found')
         return null
     }
 
@@ -93,11 +87,7 @@ export async function getSupabaseSession() {
         .eq('email', user.email)
         .single()
 
-    console.log('🔐 [getSupabaseSession] DB query result:', {
-        hasUserData: !!userData,
-        role: userData?.role,
-        dbError: dbError?.message
-    })
+
 
     // Retornar formato compatible con NextAuth session
     return {

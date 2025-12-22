@@ -1,3 +1,5 @@
+import 'server-only';
+
 import { TTSProvider, TTSRequest, TTSResponse } from './types';
 
 // ============================================================================
@@ -344,7 +346,7 @@ export class TTSProviderFactory {
 
     // PRIORIDAD 3: Chutes (si se solicita explícitamente)
     if (type === 'chutes') {
-      const apiKey = process.env.NEXT_PUBLIC_CHUTES_API_KEY || '';
+      const apiKey = process.env.CHUTES_API_KEY || '';
       return new ChutesTTSProvider(apiKey);
     }
 

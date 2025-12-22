@@ -1,4 +1,6 @@
 
+import 'server-only';
+
 import { MercadoPagoConfig, Payment, Preference } from 'mercadopago'
 
 // Configuración del cliente de MercadoPago
@@ -22,7 +24,7 @@ export const mercadopagoConfig = {
   clientSecret: process.env.MERCADOPAGO_CLIENT_SECRET || '',
   webhookSecret: process.env.MERCADOPAGO_WEBHOOK_SECRET || '',
   environment: (process.env.MERCADOPAGO_ENVIRONMENT || 'sandbox') as 'sandbox' | 'production',
-  
+
   // URLs de retorno
   urls: {
     success: `${process.env.NEXT_PUBLIC_APP_URL}/pagos/exito`,
@@ -38,12 +40,12 @@ export const validateMercadoPagoConfig = () => {
     'MERCADOPAGO_ACCESS_TOKEN',
     'MERCADOPAGO_PUBLIC_KEY'
   ]
-  
+
   const missing = requiredVars.filter(varName => !process.env[varName])
-  
+
   if (missing.length > 0) {
     throw new Error(`Variables de entorno faltantes para MercadoPago: ${missing.join(', ')}`)
   }
-  
+
   return true
 }
