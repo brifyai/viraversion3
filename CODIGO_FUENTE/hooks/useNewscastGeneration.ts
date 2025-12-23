@@ -54,7 +54,7 @@ interface JobStatus {
 }
 
 // Constantes
-const POLL_INTERVAL = 3000  // 3 segundos
+const POLL_INTERVAL = 10000  // 10 segundos (reduce function invocations)
 const MAX_WAIT_TIME = 15 * 60 * 1000  // 15 minutos
 
 // Detectar si usar modo async
