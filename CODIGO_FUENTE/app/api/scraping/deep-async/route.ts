@@ -7,13 +7,16 @@ export const dynamic = 'force-dynamic'
 
 const supabase = supabaseAdmin
 
+// Detectar si estamos en Netlify
+const isNetlify = process.env.NETLIFY === 'true' || process.env.CONTEXT === 'production' || process.env.CONTEXT === 'deploy-preview'
+
 /**
  * POST /api/scraping/deep-async
  * 
  * Dispatcher para scraping asíncrono:
  * 1. Crea un job en scraping_jobs
  * 2. En desarrollo: procesa directamente
- * 3. En Netlify: invocaría Background Function (TODO)
+ * 3. En Netlify: invoca Background Function
  * 4. Retorna jobId inmediatamente
  */
 export async function POST(request: NextRequest) {
@@ -66,9 +69,22 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Error creando job' }, { status: 500 })
         }
 
-        // Procesar en background (desarrollo local)
-        // En Netlify, aquí invocaríamos la Background Function
-        processScrapingInBackground(jobId, noticias, region, userId)
+        // En Netlify: invocar Background Function
+        // En desarrollo: procesar en background local
+        if (isNetlify) {
+            console.log('🌐 Netlify detectado: invocando Background Function')
+            const baseUrl = process.env.URL || process.env.NEXT_PUBLIC_APP_URL
+
+            // Invocar Background Function (fire-and-forget)
+            fetch(`${baseUrl}/.netlify/functions/scraping-background`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ jobId, noticias, region, userId })
+            }).catch(err => console.error('Error invocando background function:', err))
+        } else {
+            console.log('💻 Desarrollo: procesando en background local')
+            processScrapingInBackground(jobId, noticias, region, userId)
+        }
 
         return NextResponse.json({
             success: true,

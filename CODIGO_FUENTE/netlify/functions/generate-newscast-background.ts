@@ -1,5 +1,17 @@
-import { Handler, HandlerEvent, HandlerContext } from '@netlify/functions'
 import { createClient } from '@supabase/supabase-js'
+
+// Simple types for Netlify function (avoids @netlify/functions dependency)
+interface NetlifyEvent {
+    body: string | null
+    headers: Record<string, string>
+    httpMethod: string
+}
+
+interface NetlifyResponse {
+    statusCode: number
+    body: string
+    headers?: Record<string, string>
+}
 
 // Crear cliente Supabase con service role (para background functions)
 const supabase = createClient(
@@ -29,7 +41,7 @@ const AD_DURATION = 15
  * Se ejecuta de forma asíncrona y puede tardar hasta 15 minutos
  * El nombre del archivo DEBE terminar en -background para que Netlify lo reconozca
  */
-const handler: Handler = async (event: HandlerEvent, context: HandlerContext) => {
+const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
     console.log('🚀 Background Function iniciada')
 
     try {
