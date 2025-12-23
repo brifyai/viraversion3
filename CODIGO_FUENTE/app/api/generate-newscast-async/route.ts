@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
 
         if (isNetlify) {
             // Producción: invocar la Background Function de Netlify
-            const siteUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.URL || process.env.DEPLOY_PRIME_URL || ''
+            const siteUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.URL || process.env.DEPLOY_PRIME_URL || '').replace(/\/$/, '')
             const functionUrl = `${siteUrl}/.netlify/functions/generate-newscast-background`
 
             console.log(`📡 Invocando Background Function: ${functionUrl}`)

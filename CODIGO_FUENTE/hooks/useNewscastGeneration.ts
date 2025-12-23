@@ -87,11 +87,19 @@ export function useNewscastGeneration() {
     // Función para consultar estado del job
     const pollJobStatus = async (id: string): Promise<JobStatus | null> => {
         try {
+            console.log(`[Polling] Consultando job ${id}...`)
             const response = await fetch(`/api/job-status?id=${id}`)
-            if (!response.ok) return null
-            return await response.json()
+
+            if (!response.ok) {
+                console.error(`[Polling] Error HTTP: ${response.status}`)
+                return null
+            }
+
+            const data = await response.json()
+            console.log(`[Polling] Respuesta: status=${data.status}, progress=${data.progress}%`)
+            return data
         } catch (err) {
-            console.error('Error polling job status:', err)
+            console.error('[Polling] Error en fetch:', err)
             return null
         }
     }
