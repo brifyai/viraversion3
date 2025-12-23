@@ -77,9 +77,13 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // 2. Detectar si estamos en Netlify - usar URL ya que NETLIFY/CONTEXT no están disponibles en Next.js runtime
+        // 2. Detectar si estamos en Netlify o netlify dev
+        // - netlify dev: URL suele ser localhost:8888 y NETLIFY=true o CONTEXT existe
+        // - Production: URL contiene netlify.app
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || ''
-        const isNetlify = appUrl.includes('netlify.app') || appUrl.includes('.app') || process.env.NETLIFY === 'true'
+        const isNetlifyDev = appUrl.includes('localhost:8888') || process.env.CONTEXT !== undefined
+        const isNetlifyProd = appUrl.includes('netlify.app') || appUrl.includes('.app')
+        const isNetlify = isNetlifyDev || isNetlifyProd || process.env.NETLIFY === 'true'
 
         if (isNetlify) {
             // Producción: invocar la Background Function de Netlify
