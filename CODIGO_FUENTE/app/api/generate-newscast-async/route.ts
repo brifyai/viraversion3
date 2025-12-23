@@ -77,13 +77,13 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // 2. Obtener la URL de la Background Function
-        // En Netlify, las background functions se invocan via /.netlify/functions/nombre-background
-        const isNetlify = process.env.NETLIFY === 'true' || process.env.CONTEXT
+        // 2. Detectar si estamos en Netlify - usar URL ya que NETLIFY/CONTEXT no están disponibles en Next.js runtime
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || ''
+        const isNetlify = appUrl.includes('netlify.app') || appUrl.includes('.app') || process.env.NETLIFY === 'true'
 
         if (isNetlify) {
             // Producción: invocar la Background Function de Netlify
-            const siteUrl = process.env.URL || process.env.DEPLOY_PRIME_URL || ''
+            const siteUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.URL || process.env.DEPLOY_PRIME_URL || ''
             const functionUrl = `${siteUrl}/.netlify/functions/generate-newscast-background`
 
             console.log(`📡 Invocando Background Function: ${functionUrl}`)
