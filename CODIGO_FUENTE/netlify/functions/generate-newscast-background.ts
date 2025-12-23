@@ -663,22 +663,78 @@ async function updateJobStatus(
 // ============================================================
 const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
     console.log('🚀 Background Function generate-newscast-background iniciada (FULL VERSION)')
+    console.log('========== DEBUG INFO ==========')
+    console.log(`⏰ Timestamp: ${new Date().toISOString()}`)
+    console.log(`🖥️ Node version: ${process.version}`)
+    console.log(`💾 Memory: ${JSON.stringify(process.memoryUsage())}`)
+    console.log(`📊 Platform: ${process.platform}`)
+    console.log(`🌐 HTTP Method: ${event.httpMethod}`)
+    console.log(`📦 Body length: ${event.body?.length || 0} chars`)
+    console.log(`📋 Headers: ${JSON.stringify(Object.keys(event.headers))}`)
+    console.log('================================')
+
+    // Validar variables de entorno inmediatamente
+    console.log('🔍 Verificando variables de entorno...')
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    const chutesKey = process.env.CHUTES_API_KEY
+    const chutesUrl = process.env.CHUTES_CHAT_COMPLETIONS_URL
+    const voicemakerKey = process.env.VOICEMAKER_API_KEY
+
+    console.log(`   SUPABASE_URL: ${supabaseUrl ? '✅ OK (' + supabaseUrl.substring(0, 30) + '...)' : '❌ FALTA'}`)
+    console.log(`   SUPABASE_KEY: ${supabaseKey ? '✅ OK (' + supabaseKey.substring(0, 10) + '...)' : '❌ FALTA'}`)
+    console.log(`   CHUTES_KEY: ${chutesKey ? '✅ OK' : '❌ FALTA'}`)
+    console.log(`   CHUTES_URL: ${chutesUrl ? '✅ OK' : '⚠️ Usando default'}`)
+    console.log(`   VOICEMAKER_KEY: ${voicemakerKey ? '✅ OK' : '⚠️ No configurado'}`)
+    console.log(`   Total env vars: ${Object.keys(process.env).length}`)
+
+    if (!supabaseUrl || !supabaseKey) {
+        console.error('❌ CRITICAL: Variables de entorno de Supabase faltantes')
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Variables de entorno de Supabase no configuradas' })
+        }
+    }
+
+    // Test conexión Supabase
+    console.log('🔌 Probando conexión a Supabase...')
+    try {
+        const { data: testData, error: testError } = await supabase.from('newscast_jobs').select('id').limit(1)
+        if (testError) {
+            console.error('❌ Error conectando a Supabase:', testError.message)
+        } else {
+            console.log('✅ Conexión a Supabase OK')
+        }
+    } catch (connError) {
+        console.error('❌ Exception conectando a Supabase:', connError)
+    }
 
     let jobId: string | undefined
 
     try {
+        console.log('📋 Parseando body del request...')
+        console.log(`📋 Body preview: ${event.body?.substring(0, 200)}...`)
+
         const body = JSON.parse(event.body || '{}')
         jobId = body.jobId
         const config = body.config
 
+        console.log(`📋 Body parseado: jobId=${jobId}, config keys=${config ? Object.keys(config).join(',') : 'null'}`)
+
         if (!jobId || !config) {
+            console.error('❌ Missing required fields: jobId or config')
             return { statusCode: 400, body: JSON.stringify({ error: 'jobId y config son requeridos' }) }
         }
 
         console.log(`📋 Job ID: ${jobId}`)
         console.log(`📋 Región: ${config.region}`)
+        console.log(`📋 User ID: ${config.userId}`)
+        console.log(`📋 Target Duration: ${config.targetDuration}s`)
+        console.log(`📋 News URLs count: ${config.specificNewsUrls?.length || 0}`)
 
+        console.log('📊 Actualizando job status a processing...')
         await updateJobStatus(jobId, 'processing', 5, 'Iniciando generación...')
+        console.log('✅ Job status actualizado')
 
         const {
             region,
