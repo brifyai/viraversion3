@@ -49,16 +49,33 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
         await updateJobStatus(jobId, 'processing', 5, 'Iniciando generación...')
 
         // Obtener la URL base del sitio
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.URL
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.URL || process.env.DEPLOY_PRIME_URL
 
-        console.log(`🔗 Calling: ${baseUrl}/api/generate-newscast`)
+        console.log(`🔗 Base URL: ${baseUrl}`)
+        console.log(`🔗 NEXT_PUBLIC_APP_URL: ${process.env.NEXT_PUBLIC_APP_URL}`)
+        console.log(`🔗 URL: ${process.env.URL}`)
+        console.log(`🔗 DEPLOY_PRIME_URL: ${process.env.DEPLOY_PRIME_URL}`)
+
+        if (!baseUrl) {
+            throw new Error('No se pudo determinar la URL base del sitio')
+        }
+
+        const endpoint = `${baseUrl}/api/generate-newscast`
+        console.log(`🔗 Calling: ${endpoint}`)
+
+        // Fetch con timeout de 14 minutos (840000ms)
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 840000)
 
         // Llamar al endpoint de generación real que tiene toda la lógica de IA
-        const response = await fetch(`${baseUrl}/api/generate-newscast`, {
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(config)
+            body: JSON.stringify(config),
+            signal: controller.signal
         })
+
+        clearTimeout(timeoutId)
 
         if (response.ok) {
             const data = await response.json()

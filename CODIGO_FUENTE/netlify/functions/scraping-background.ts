@@ -38,6 +38,8 @@ interface ScrapingPayload {
 export const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
     console.log('🚀 Background Function: scraping-background iniciada')
 
+    let jobId: string | undefined
+
     try {
         if (!event.body) {
             console.error('No body provided')
@@ -45,7 +47,8 @@ export const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => 
         }
 
         const payload: ScrapingPayload = JSON.parse(event.body)
-        const { jobId, noticias, region, userId } = payload
+        jobId = payload.jobId
+        const { noticias, region, userId } = payload
 
         console.log(`📋 Job ${jobId}: procesando ${noticias.length} noticias`)
 
@@ -55,16 +58,33 @@ export const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => 
             .update({ status: 'processing' })
             .eq('id', jobId)
 
-        // Call the actual scraping endpoint
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.URL
+        // Construir URL - priorizar NEXT_PUBLIC_APP_URL
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.URL || process.env.DEPLOY_PRIME_URL
 
-        console.log(`🔗 Calling: ${baseUrl}/api/scraping/deep`)
+        console.log(`🔗 Base URL: ${baseUrl}`)
+        console.log(`🔗 NEXT_PUBLIC_APP_URL: ${process.env.NEXT_PUBLIC_APP_URL}`)
+        console.log(`🔗 URL: ${process.env.URL}`)
+        console.log(`🔗 DEPLOY_PRIME_URL: ${process.env.DEPLOY_PRIME_URL}`)
 
-        const response = await fetch(`${baseUrl}/api/scraping/deep`, {
+        if (!baseUrl) {
+            throw new Error('No se pudo determinar la URL base del sitio')
+        }
+
+        const endpoint = `${baseUrl}/api/scraping/deep`
+        console.log(`🔗 Calling: ${endpoint}`)
+
+        // Fetch con timeout de 10 minutos (600000ms)
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 600000)
+
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ noticias, region, userId })
+            body: JSON.stringify({ noticias, region, userId }),
+            signal: controller.signal
         })
+
+        clearTimeout(timeoutId)
 
         if (response.ok) {
             const data = await response.json()
@@ -82,34 +102,29 @@ export const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => 
                 .eq('id', jobId)
 
             console.log(`✅ Job ${jobId} completado: ${data.noticias_procesadas} noticias`)
+
+            return {
+                statusCode: 200,
+                body: JSON.stringify({ success: true, jobId })
+            }
         } else {
             const errorText = await response.text()
             throw new Error(`Scraping failed: ${response.status} - ${errorText}`)
         }
 
-        return {
-            statusCode: 200,
-            body: JSON.stringify({ success: true, jobId })
-        }
-
     } catch (error) {
         console.error('❌ Background scraping error:', error)
 
-        // Try to update job as failed
-        try {
-            const payload = JSON.parse(event.body || '{}')
-            if (payload.jobId) {
-                await supabase
-                    .from('scraping_jobs')
-                    .update({
-                        status: 'failed',
-                        error: error instanceof Error ? error.message : 'Unknown error',
-                        completed_at: new Date().toISOString()
-                    })
-                    .eq('id', payload.jobId)
-            }
-        } catch (e) {
-            console.error('Failed to update job status:', e)
+        // Update job as failed
+        if (jobId) {
+            await supabase
+                .from('scraping_jobs')
+                .update({
+                    status: 'failed',
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                    completed_at: new Date().toISOString()
+                })
+                .eq('id', jobId)
         }
 
         return {
