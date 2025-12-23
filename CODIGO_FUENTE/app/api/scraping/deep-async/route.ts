@@ -7,8 +7,9 @@ export const dynamic = 'force-dynamic'
 
 const supabase = supabaseAdmin
 
-// Detectar si estamos en Netlify
-const isNetlify = process.env.NETLIFY === 'true' || process.env.CONTEXT === 'production' || process.env.CONTEXT === 'deploy-preview'
+// Detectar si estamos en Netlify - usar URL ya que NETLIFY/CONTEXT no están disponibles en Next.js runtime
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || ''
+const isNetlify = appUrl.includes('netlify.app') || appUrl.includes('.app') || process.env.NETLIFY === 'true'
 
 /**
  * POST /api/scraping/deep-async
