@@ -750,5 +750,13 @@ CREATE INDEX IF NOT EXISTS idx_scraping_jobs_user ON "scraping_jobs" (user_id);
 COMMENT ON TABLE "scraping_jobs" IS 'Jobs de scraping asíncronos para evitar timeouts en Netlify';
 
 -- ==================================================
+-- SUPABASE REALTIME
+-- Habilitar notificaciones en tiempo real para jobs
+-- ==================================================
+-- Esto permite que el frontend reciba updates sin polling
+ALTER PUBLICATION supabase_realtime ADD TABLE newscast_jobs;
+ALTER PUBLICATION supabase_realtime ADD TABLE scraping_jobs;
+
+-- ==================================================
 -- FIN DEL SCHEMA
 -- ==================================================

@@ -548,8 +548,8 @@ export default function CrearNoticiero() {
             localStorage.getItem('forceAsyncScraping') === 'true'
 
           if (shouldUseAsync) {
-            // Modo ASYNC con polling para Netlify
-            console.log('🌐 Modo ASYNC: usando scraping asíncrono con polling')
+            // Modo ASYNC con Realtime para Netlify (sin polling!)
+            console.log('🌐 Modo ASYNC: usando scraping asíncrono con Realtime')
 
             const asyncRes = await fetch('/api/scraping/deep-async', {
               method: 'POST',
@@ -567,31 +567,45 @@ export default function CrearNoticiero() {
               const { jobId } = await asyncRes.json()
               console.log(`📋 Job de scraping creado: ${jobId}`)
 
-              // Polling del estado del job
-              const POLL_INTERVAL = 2000 // 2 segundos
+              // Usar Realtime en vez de polling (CERO function invocations!)
               const MAX_WAIT = 5 * 60 * 1000 // 5 minutos max
-              const startTime = Date.now()
 
-              const pollStatus = async (): Promise<any> => {
-                if (Date.now() - startTime > MAX_WAIT) {
-                  throw new Error('Timeout esperando scraping')
-                }
+              const scrapeData = await new Promise<any>((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                  supabase.removeChannel(channel)
+                  reject(new Error('Timeout esperando scraping'))
+                }, MAX_WAIT)
 
-                const statusRes = await fetch(`/api/scraping/job-status?id=${jobId}`)
-                const status = await statusRes.json()
+                const channel = supabase
+                  .channel(`scraping-${jobId}`)
+                  .on(
+                    'postgres_changes',
+                    {
+                      event: 'UPDATE',
+                      schema: 'public',
+                      table: 'scraping_jobs',
+                      filter: `id=eq.${jobId}`
+                    },
+                    (payload: any) => {
+                      const job = payload.new
+                      console.log(`[Realtime Scraping] status=${job.status}, progress=${job.progress}/${job.total}`)
 
-                if (status.status === 'completed') {
-                  return status.result
-                } else if (status.status === 'failed') {
-                  throw new Error(status.error || 'Error en scraping')
-                } else {
-                  // Seguir esperando
-                  await new Promise(r => setTimeout(r, POLL_INTERVAL))
-                  return pollStatus()
-                }
-              }
+                      if (job.status === 'completed') {
+                        clearTimeout(timeout)
+                        supabase.removeChannel(channel)
+                        resolve(job.result)
+                      } else if (job.status === 'failed') {
+                        clearTimeout(timeout)
+                        supabase.removeChannel(channel)
+                        reject(new Error(job.error || 'Error en scraping'))
+                      }
+                    }
+                  )
+                  .subscribe((status: string) => {
+                    console.log(`[Realtime Scraping] Subscription: ${status}`)
+                  })
+              })
 
-              const scrapeData = await pollStatus()
               console.log('✅ Scraping async completado')
 
               if (scrapeData?.noticias_fallidas > 0) {

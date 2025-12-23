@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 
 interface NewscastConfig {
     region: string
@@ -54,14 +55,9 @@ interface JobStatus {
 }
 
 // Constantes
-const POLL_INTERVAL = 10000  // 10 segundos (reduce function invocations)
 const MAX_WAIT_TIME = 15 * 60 * 1000  // 15 minutos
 
 // Detectar si usar modo async
-// En producción (Netlify): siempre async
-// En desarrollo: sync por defecto, pero se puede forzar async con:
-//   - localStorage.setItem('forceAsyncMode', 'true')
-//   - O agregando ?asyncMode=true en la URL
 const isNetlifyProduction = typeof window !== 'undefined' &&
     (window.location.hostname.includes('netlify') ||
         window.location.hostname.includes('.app'))
@@ -69,7 +65,6 @@ const isNetlifyProduction = typeof window !== 'undefined' &&
 const shouldUseAsyncMode = () => {
     if (typeof window === 'undefined') return false
     if (isNetlifyProduction) return true
-    // Forzar async en desarrollo
     if (localStorage.getItem('forceAsyncMode') === 'true') return true
     if (window.location.search.includes('asyncMode=true')) return true
     return false
@@ -77,42 +72,36 @@ const shouldUseAsyncMode = () => {
 
 export function useNewscastGeneration() {
     const router = useRouter()
+    const supabase = createClientComponentClient()
+
     const [isGenerating, setIsGenerating] = useState(false)
     const [progress, setProgress] = useState(0)
     const [status, setStatus] = useState('')
     const [error, setError] = useState<string | null>(null)
     const [jobId, setJobId] = useState<string | null>(null)
-    const pollingRef = useRef<NodeJS.Timeout | null>(null)
 
-    // Función para consultar estado del job
-    const pollJobStatus = async (id: string): Promise<JobStatus | null> => {
-        try {
-            console.log(`[Polling] Consultando job ${id}...`)
-            const response = await fetch(`/api/job-status?id=${id}`)
+    const subscriptionRef = useRef<any>(null)
+    const timeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-            if (!response.ok) {
-                console.error(`[Polling] Error HTTP: ${response.status}`)
-                return null
-            }
-
-            const data = await response.json()
-            console.log(`[Polling] Respuesta: status=${data.status}, progress=${data.progress}%`)
-            return data
-        } catch (err) {
-            console.error('[Polling] Error en fetch:', err)
-            return null
+    // Limpiar suscripción Realtime
+    const cleanupSubscription = () => {
+        if (subscriptionRef.current) {
+            console.log('[Realtime] Limpiando suscripción')
+            supabase.removeChannel(subscriptionRef.current)
+            subscriptionRef.current = null
+        }
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current)
+            timeoutRef.current = null
         }
     }
 
-    // Limpiar polling
-    const clearPolling = () => {
-        if (pollingRef.current) {
-            clearInterval(pollingRef.current)
-            pollingRef.current = null
-        }
-    }
+    // Limpiar al desmontar componente
+    useEffect(() => {
+        return () => cleanupSubscription()
+    }, [])
 
-    // Generación asíncrona con polling (para Netlify)
+    // Generación asíncrona con Realtime (para Netlify)
     const generateNewscastAsync = async (config: NewscastConfig): Promise<GenerationResult> => {
         setIsGenerating(true)
         setProgress(0)
@@ -135,59 +124,76 @@ export function useNewscastGeneration() {
             const { jobId: newJobId } = await response.json()
             setJobId(newJobId)
             setProgress(5)
-            setStatus('Job creado, procesando...')
+            setStatus('Job creado, esperando procesamiento...')
 
-            // 2. Polling para obtener progreso
-            const startTime = Date.now()
+            console.log(`[Realtime] Suscribiéndose a job: ${newJobId}`)
 
+            // 2. Suscribirse a cambios via Realtime (CERO polling!)
             return new Promise((resolve, reject) => {
-                pollingRef.current = setInterval(async () => {
-                    // Timeout máximo
-                    if (Date.now() - startTime > MAX_WAIT_TIME) {
-                        clearPolling()
-                        setIsGenerating(false)  // ✅ FIX: Mover aquí
-                        reject(new Error('Tiempo de espera agotado (15 min)'))
-                        return
-                    }
+                // Timeout de seguridad
+                timeoutRef.current = setTimeout(() => {
+                    cleanupSubscription()
+                    setIsGenerating(false)
+                    reject(new Error('Tiempo de espera agotado (15 min)'))
+                }, MAX_WAIT_TIME)
 
-                    const jobStatus = await pollJobStatus(newJobId)
+                // Suscripción Realtime a la tabla newscast_jobs
+                subscriptionRef.current = supabase
+                    .channel(`job-${newJobId}`)
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: 'UPDATE',
+                            schema: 'public',
+                            table: 'newscast_jobs',
+                            filter: `id=eq.${newJobId}`
+                        },
+                        (payload: any) => {
+                            const job = payload.new
+                            console.log(`[Realtime] Update recibido: status=${job.status}, progress=${job.progress}%`)
 
-                    if (!jobStatus) return
+                            // Actualizar UI
+                            setProgress(job.progress)
+                            setStatus(job.progress_message || 'Procesando...')
 
-                    // Actualizar UI
-                    setProgress(jobStatus.progress)
-                    setStatus(jobStatus.progressMessage || 'Procesando...')
+                            // Verificar estado final
+                            if (job.status === 'completed') {
+                                console.log('[Realtime] ✅ Job completado!')
+                                cleanupSubscription()
+                                setProgress(100)
+                                setStatus('¡Noticiero generado exitosamente!')
+                                setIsGenerating(false)
 
-                    // Verificar estado final
-                    if (jobStatus.status === 'completed') {
-                        clearPolling()
-                        setProgress(100)
-                        setStatus('¡Noticiero generado exitosamente!')
-                        setIsGenerating(false)  // ✅ FIX: Mover aquí
-
-                        resolve({
-                            success: true,
-                            newscastId: jobStatus.newscastId
-                        })
-                    } else if (jobStatus.status === 'failed') {
-                        clearPolling()
-                        setIsGenerating(false)  // ✅ FIX: Mover aquí
-                        reject(new Error(jobStatus.error || 'Error en generación'))
-                    }
-                }, POLL_INTERVAL)
+                                resolve({
+                                    success: true,
+                                    newscastId: job.newscast_id
+                                })
+                            } else if (job.status === 'failed') {
+                                console.log('[Realtime] ❌ Job falló:', job.error)
+                                cleanupSubscription()
+                                setIsGenerating(false)
+                                reject(new Error(job.error || 'Error en generación'))
+                            }
+                        }
+                    )
+                    .subscribe((status: string) => {
+                        console.log(`[Realtime] Subscription status: ${status}`)
+                        if (status === 'SUBSCRIBED') {
+                            console.log('[Realtime] ✅ Suscripción activa - escuchando cambios')
+                        }
+                    })
             })
 
         } catch (err) {
-            clearPolling()
+            cleanupSubscription()
             const errorMessage = err instanceof Error ? err.message : 'Error desconocido'
             setError(errorMessage)
             setStatus('Error en la generación')
-            setIsGenerating(false)  // ✅ FIX: Mover aquí
+            setIsGenerating(false)
             console.error('Error generando noticiero:', err)
 
             return { success: false, error: errorMessage }
         }
-        // ✅ FIX: Removido finally block - ahora cada path maneja isGenerating
     }
 
     // Generación síncrona (para desarrollo local)
@@ -289,10 +295,9 @@ export function useNewscastGeneration() {
 
     // Función principal: elige el modo según el entorno
     const generateNewscast = async (config: NewscastConfig): Promise<GenerationResult> => {
-        // Usar shouldUseAsyncMode() para permitir forzar async en desarrollo
         const useAsync = shouldUseAsyncMode()
         if (useAsync) {
-            console.log('🌐 Modo ASYNC: usando generación asíncrona con polling')
+            console.log('🌐 Modo ASYNC: usando Supabase Realtime (sin polling)')
             return generateNewscastAsync(config)
         } else {
             console.log('💻 Modo SYNC: usando generación síncrona directa')
@@ -305,7 +310,7 @@ export function useNewscastGeneration() {
     }
 
     const reset = () => {
-        clearPolling()
+        cleanupSubscription()
         setIsGenerating(false)
         setProgress(0)
         setStatus('')
