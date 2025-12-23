@@ -13,40 +13,29 @@ interface NetlifyResponse {
     headers?: Record<string, string>
 }
 
-// Crear cliente Supabase con service role (para background functions)
+// Crear cliente Supabase con service role
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Configuración de Chutes AI
-const CHUTES_CONFIG = {
-    apiKey: process.env.CHUTES_API_KEY || '',
-    endpoints: {
-        chatCompletions: process.env.CHUTES_CHAT_COMPLETIONS_URL || 'https://llm.chutes.ai/v1/chat/completions'
-    },
-    model: process.env.CHUTES_MODEL || 'deepseek-ai/DeepSeek-V3-0324'
-}
-
-// Constantes de timing
-const CORRECTION_FACTOR = 0.95
-const WORDS_PER_NEWS = 100
-const SILENCE_BETWEEN_NEWS = 1.5
-const INTRO_DURATION = 12
-const OUTRO_DURATION = 15
-const AD_DURATION = 15
-
 /**
  * Background Function para generar noticieros
  * Se ejecuta de forma asíncrona y puede tardar hasta 15 minutos
  * El nombre del archivo DEBE terminar en -background para que Netlify lo reconozca
+ * 
+ * ESTRATEGIA: Esta función simplemente llama al endpoint /api/generate-newscast
+ * que ya tiene toda la lógica de humanización con IA.
  */
 const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
-    console.log('🚀 Background Function iniciada')
+    console.log('🚀 Background Function generate-newscast-background iniciada')
+
+    let jobId: string | undefined
 
     try {
         const body = JSON.parse(event.body || '{}')
-        const { jobId, config } = body
+        jobId = body.jobId
+        const config = body.config
 
         if (!jobId || !config) {
             console.error('❌ jobId o config faltantes')
@@ -54,143 +43,69 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
         }
 
         console.log(`📋 Job ID: ${jobId}`)
-        console.log(`📋 Config recibida:`, JSON.stringify(config, null, 2).substring(0, 500))
+        console.log(`📋 Región: ${config.region}`)
 
         // Actualizar estado: processing
-        await updateJobStatus(jobId, 'processing', 0, 'Iniciando generación...')
+        await updateJobStatus(jobId, 'processing', 5, 'Iniciando generación...')
 
-        // =====================================================
-        // AQUÍ VA LA LÓGICA PRINCIPAL DE GENERACIÓN
-        // (Migrada desde app/api/generate-newscast/route.ts)
-        // =====================================================
+        // Obtener la URL base del sitio
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.URL
 
-        const {
-            region,
-            radioName,
-            categories,
-            categoryConfig,
-            specificNewsUrls,
-            targetDuration,
-            voiceWPM = 168,
-            voiceSettings,
-            voiceModel,
-            adCount = 2,
-            userId
-        } = config
+        console.log(`🔗 Calling: ${baseUrl}/api/generate-newscast`)
 
-        console.log(`🎙️ Generando noticiero para ${region} (${targetDuration}s planificados)`)
-
-        await updateJobStatus(jobId, 'processing', 10, 'Buscando noticias en base de datos...')
-
-        // 1. Obtener noticias
-        const uniqueUrls: string[] = specificNewsUrls
-            ? [...new Set(specificNewsUrls as string[])]
-            : []
-
-        let selectedNews: any[] = []
-
-        if (uniqueUrls.length > 0) {
-            const { data: newsData, error } = await supabase
-                .from('noticias_scrapeadas')
-                .select('*')
-                .in('url', uniqueUrls)
-
-            if (error) {
-                throw new Error(`Error obteniendo noticias: ${error.message}`)
-            }
-            selectedNews = newsData || []
-        }
-
-        console.log(`📰 ${selectedNews.length} noticias encontradas`)
-        await updateJobStatus(jobId, 'processing', 20, `${selectedNews.length} noticias encontradas`)
-
-        if (selectedNews.length === 0) {
-            throw new Error('No se encontraron noticias para generar el noticiero')
-        }
-
-        // 2. Humanizar noticias (simulado - aquí iría la llamada real)
-        await updateJobStatus(jobId, 'processing', 30, 'Humanizando textos...')
-
-        // TODO: Importar y ejecutar humanizeText para cada noticia
-        // Por ahora, simular el procesamiento
-        const processedNews = selectedNews.map((news, index) => ({
-            ...news,
-            humanizedContent: news.contenido || news.resumen || news.titulo,
-            palabras: Math.round((news.contenido?.length || 500) / 6)
-        }))
-
-        await updateJobStatus(jobId, 'processing', 60, 'Generando estructura del noticiero...')
-
-        // 3. Crear estructura del timeline
-        const timeline = buildTimeline(processedNews, {
-            region,
-            radioName: radioName || `Radio ${region}`,
-            adCount,
-            targetDuration,
-            voiceWPM
+        // Llamar al endpoint de generación real que tiene toda la lógica de IA
+        const response = await fetch(`${baseUrl}/api/generate-newscast`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
         })
 
-        await updateJobStatus(jobId, 'processing', 80, 'Guardando en base de datos...')
+        if (response.ok) {
+            const data = await response.json()
 
-        // 4. Guardar noticiero en DB
-        const { data: noticiero, error: insertError } = await supabase
-            .from('noticieros')
-            .insert({
-                titulo: `Noticiero ${region} - ${new Date().toLocaleDateString('es-CL')}`,
-                region,
-                datos_timeline: timeline,
-                duracion_segundos: targetDuration,
-                estado: 'generado',
-                user_id: userId,
-                metadata: {
-                    voiceModel,
-                    voiceSettings,
-                    generatedAt: new Date().toISOString(),
-                    newsCount: selectedNews.length,
-                    generatedViaBackground: true
-                }
-            })
-            .select()
-            .single()
+            // Actualizar job como completado con el newscastId del resultado
+            await supabase
+                .from('newscast_jobs')
+                .update({
+                    status: 'completed',
+                    progress: 100,
+                    progress_message: '¡Noticiero generado exitosamente!',
+                    newscast_id: data.newscastId,
+                    completed_at: new Date().toISOString()
+                })
+                .eq('id', jobId)
 
-        if (insertError || !noticiero) {
-            throw new Error(`Error guardando noticiero: ${insertError?.message || 'Unknown error'}`)
-        }
+            console.log(`✅ Job ${jobId} completado: ${data.newscastId}`)
 
-        console.log(`✅ Noticiero guardado: ${noticiero.id}`)
-
-        // 5. Marcar job como completado
-        await updateJobStatus(jobId, 'completed', 100, '¡Noticiero generado exitosamente!', noticiero.id)
-
-        return {
-            statusCode: 202,
-            body: JSON.stringify({
-                success: true,
-                jobId,
-                newscastId: noticiero.id
-            })
+            return {
+                statusCode: 200,
+                body: JSON.stringify({ success: true, jobId, newscastId: data.newscastId })
+            }
+        } else {
+            const errorText = await response.text()
+            throw new Error(`Generate newscast failed: ${response.status} - ${errorText}`)
         }
 
     } catch (error) {
-        console.error('❌ Error en Background Function:', error)
+        console.error('❌ Background Function error:', error)
 
-        const body = JSON.parse(event.body || '{}')
-        if (body.jobId) {
-            await updateJobStatus(
-                body.jobId,
-                'failed',
-                0,
-                'Error en generación',
-                undefined,
-                error instanceof Error ? error.message : 'Error desconocido'
-            )
+        // Actualizar job como fallido
+        if (jobId) {
+            await supabase
+                .from('newscast_jobs')
+                .update({
+                    status: 'failed',
+                    progress: 0,
+                    progress_message: 'Error en generación',
+                    error: error instanceof Error ? error.message : 'Error desconocido',
+                    completed_at: new Date().toISOString()
+                })
+                .eq('id', jobId)
         }
 
         return {
             statusCode: 500,
-            body: JSON.stringify({
-                error: error instanceof Error ? error.message : 'Error desconocido'
-            })
+            body: JSON.stringify({ error: error instanceof Error ? error.message : 'Error desconocido' })
         }
     }
 }
@@ -202,97 +117,24 @@ async function updateJobStatus(
     jobId: string,
     status: 'pending' | 'processing' | 'completed' | 'failed',
     progress: number,
-    progressMessage: string,
-    newscastId?: string,
-    error?: string
+    progressMessage: string
 ) {
-    const updateData: any = {
-        status,
-        progress,
-        progress_message: progressMessage,
-        updated_at: new Date().toISOString()
-    }
-
-    if (status === 'processing' && progress === 0) {
-        updateData.started_at = new Date().toISOString()
-    }
-
-    if (status === 'completed' || status === 'failed') {
-        updateData.completed_at = new Date().toISOString()
-    }
-
-    if (newscastId) {
-        updateData.newscast_id = newscastId
-    }
-
-    if (error) {
-        updateData.error = error
-    }
-
-    const { error: dbError } = await supabase
+    const { error } = await supabase
         .from('newscast_jobs')
-        .update(updateData)
+        .update({
+            status,
+            progress,
+            progress_message: progressMessage,
+            started_at: status === 'processing' ? new Date().toISOString() : undefined,
+            updated_at: new Date().toISOString()
+        })
         .eq('id', jobId)
 
-    if (dbError) {
-        console.error('Error actualizando job status:', dbError)
+    if (error) {
+        console.error('Error actualizando job status:', error)
     } else {
         console.log(`📊 Job ${jobId}: ${status} (${progress}%) - ${progressMessage}`)
     }
-}
-
-/**
- * Construir timeline básico del noticiero
- */
-function buildTimeline(news: any[], config: any) {
-    const timeline: any[] = []
-
-    // Intro
-    timeline.push({
-        id: 'intro',
-        type: 'intro',
-        title: 'Intro',
-        text: `Bienvenidos al noticiero de ${config.radioName}.`,
-        duration: INTRO_DURATION
-    })
-
-    // Noticias con publicidades intercaladas
-    const newsPerAd = config.adCount > 0 ? Math.ceil(news.length / (config.adCount + 1)) : news.length
-    let adIndex = 0
-
-    news.forEach((item, index) => {
-        // Agregar noticia
-        timeline.push({
-            id: item.id,
-            type: 'news',
-            title: item.titulo,
-            text: item.humanizedContent,
-            duration: Math.round(item.palabras / (config.voiceWPM / 60)),
-            category: item.categoria
-        })
-
-        // Agregar publicidad si corresponde
-        if ((index + 1) % newsPerAd === 0 && adIndex < config.adCount) {
-            timeline.push({
-                id: `ad-${adIndex}`,
-                type: 'ad',
-                title: `Publicidad ${adIndex + 1}`,
-                duration: AD_DURATION
-            })
-            adIndex++
-        }
-    })
-
-    // Outro
-    timeline.push({
-        id: 'outro',
-        type: 'outro',
-        title: 'Cierre',
-        text: `Esto ha sido todo en ${config.radioName}. ¡Hasta la próxima!`,
-        duration: OUTRO_DURATION
-    })
-
-    return timeline
 }
 
 export { handler }
