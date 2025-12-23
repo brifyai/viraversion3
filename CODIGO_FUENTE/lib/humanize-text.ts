@@ -276,7 +276,7 @@ export async function humanizeText(
 ⚠️ OBJETIVO PRINCIPAL: Que el texto **suene como si un locutor de radio lo estuviera leyendo en vivo**, no como una lista de datos.
 
 ✅ DEBES:
-- **Priorizar la fluidez sobre la longitud estricta de las oraciones.** Usa oraciones completas, pero **conéctalas de manera natural**. Puedes usar oraciones de hasta 20-25 palabras si la idea lo requiere y la respiración lo permite.
+- **Priorizar la fluidez sobre la longitud estricta de las oraciones.** Usa oraciones completas, pero **conéctalas de manera natural**. **Controla la respiración para TTS:** Cada oración debe poder leerse en UNA sola respiración (ideal 12-18 palabras, máximo 20).
 - **Usar comas CON PROPÓSITO:** Solo para pausas naturales, enumeraciones cortas, o conectar ideas relacionadas **dentro de la misma oración**. Ej: "En el vehículo viajaba una familia de cuatro personas, donde el conductor falleció en el acto".
 - **Variar la longitud de las frases.** Mezcla frases cortas (de impacto) con algunas más largas (de contexto) para crear un ritmo auditivo agradable.
 - **Usar un lenguaje radial chileno estándar y coloquial.** Ej: "chocó por detrás", "quedó grave", "fue detenido".
@@ -305,33 +305,43 @@ export async function humanizeText(
 
 DEVUELVES ÚNICAMENTE el guion final. Nada más.`
 
-        const userPrompt = `Actúa como un locutor de radio chileno **LOCAL** contando esta noticia. La radio está ubicada en ${region}, por lo que hablas para oyentes DE ESTA REGIÓN.
+        const userPrompt = `Actúa como un locutor de radio chileno. Tu radio está ubicada en ${region}.
 
-🎯 **NOTICIA PRINCIPAL:** "${topicAnchor}" (solo esto, nada más)
+🎯 **ANÁLISIS GEOGRÁFICO (HACER PRIMERO):**
+1. Lee la noticia y DETERMINA: ¿Ocurre en ${region} o en otra región?
+2. **PISTAS:** Busca "seremi de...", "municipalidad de...", nombres de ciudades
+3. **DECISIÓN:**
+   - Si es en ${region} → Noticia LOCAL
+   - Si es en otra región → Noticia EXTERNA
 
-🗣️ **COMO HABLAR (PERSPECTIVA LOCAL):**
-- Eres un locutor que **está en ${region} hablando para ${region}**
-- **NO uses frases como:** "nos llega desde...", "desde... informan", "en... ocurrió"
-- **EN CAMBIO, usa:** "aquí en ${region}", "en nuestra región", "localmente"
-- O simplemente presenta la noticia directamente sin referencias geográficas redundantes
-- Conecta las frases de forma natural, conversacional
-- Termina con una frase relevante para los oyentes locales
+🎯 **NOTICIA PRINCIPAL:** "${topicAnchor}"
 
-📍 **REGLA GEOGRÁFICA ABSOLUTA:**
-- **SI la noticia menciona** ciudades/seremis/municipalidades de ${region} → Es LOCAL
-- **SI la noticia menciona** otras regiones (Biobío, Valparaíso, etc.) → Es de OTRA REGIÓN
-- **LOCAL:** Usa "aquí en ${region}", "nuestra región"
-- **OTRA REGIÓN:** Usa "desde [esa región]", "en [esa región]"
+🗣️ **COMO LOCUTAR PARA TTS:**
+- **PARA TTS (TEXT-TO-SPEECH):**
+  • Máximo 20-22 palabras por oración (para respiración natural)
+  • Usa comas SOLO para pausas breves dentro de la misma idea
+  • Evita oraciones subordinadas complejas
+  • Simplifica términos técnicos: "zarpe" → "partida", "tanquero" → "buque petrolero"
 
-📌 **EJEMPLO:** Si dice "seremi del Biobío" y tu radio es de Ñuble → "Desde el Biobío..."
+- **SEGÚN TIPO DE NOTICIA:**
+  • **LOCAL (en ${region}):** "Aquí en ${region}", "En nuestra región"
+  • **EXTERNA (otra región):** "Desde [región]", "En [región]"
+  • **INTERNACIONAL:** "A nivel internacional", "En el extranjero"
+
+- **ESTILO RADIAL CHILENO:**
+  • Conversacional, como hablando con un vecino
+  • Conectores naturales: "y", "pero", "además", "mientras tanto"
+  • Cierre con frase relevante para el oyente chileno
 
 📰 **INFORMACIÓN BASE:**
 "${cleanedText}"
 
 ${transitionPhrase ? `👉 **ARRANCA CON:** "${transitionPhrase}"` : ''}
-📍 **CONTEXTO IMPORTANTE:** Estás transmitiendo DESDE ${region} PARA oyentes DE ${region}
 
-→ Solo tu guion locutado, con perspectiva local correcta. Nada extra.`
+→ **PASO 1:** Determina LOCAL/EXTERNA/INTERNACIONAL.
+→ **PASO 2:** Locuta optimizado para TTS.
+→ **PASO 3:** Ajusta lenguaje según tipo de noticia.
+→ Solo el guion final.`
 
         // Calcular tokens aproximados
         const inputTokens = Math.ceil((systemPrompt.length + userPrompt.length) / 4)

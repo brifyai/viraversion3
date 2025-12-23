@@ -502,6 +502,16 @@ export default function CrearNoticiero() {
     // AUTOMATED DEEP SCRAPING
     // Si hay URLs seleccionadas, asegurarnos de que tengan contenido completo antes de generar
     if (selectedNewsUrls.length > 0) {
+      // 🔍 DEBUG: Ver exactamente qué URLs están seleccionadas
+      console.log(`🔍 DEBUG Frontend: selectedNewsUrls.length = ${selectedNewsUrls.length}`)
+      console.log(`🔍 DEBUG Frontend: URLs =`, selectedNewsUrls)
+
+      // Detectar duplicados en el frontend
+      const uniqueUrlsSet = new Set(selectedNewsUrls)
+      if (uniqueUrlsSet.size < selectedNewsUrls.length) {
+        console.warn(`⚠️ DUPLICADOS EN FRONTEND: ${selectedNewsUrls.length} → ${uniqueUrlsSet.size} URLs únicas`)
+      }
+
       setIsPreProcessing(true)
       try {
         toast.info('📥 Obteniendo contenido completo de las noticias seleccionadas...', { autoClose: 3000 })
@@ -531,32 +541,100 @@ export default function CrearNoticiero() {
         console.log(`📤 Enviando ${newsToScrape.length} noticias al deep scraping (de ${selectedNewsUrls.length} seleccionadas)`)
 
         if (newsToScrape.length > 0) {
-          const scrapeRes = await fetch('/api/scraping/deep', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              noticias: newsToScrape,
-              region: selectedRegion || 'Nacional',
-              userId: session?.user?.id  // ✅ FIX: Fallback auth para operaciones largas
-            })
-          })
+          // Detectar si usar async (Netlify) o sync (local)
+          const shouldUseAsync =
+            window.location.hostname.includes('netlify') ||
+            window.location.hostname.includes('.app') ||
+            localStorage.getItem('forceAsyncScraping') === 'true'
 
-          if (!scrapeRes.ok) {
-            console.warn('Advertencia en scraping automático')
-          } else {
-            const scrapeData = await scrapeRes.json()
-            console.log('✅ Scraping automático completado')
+          if (shouldUseAsync) {
+            // Modo ASYNC con polling para Netlify
+            console.log('🌐 Modo ASYNC: usando scraping asíncrono con polling')
 
-            // Mostrar alerta si hubo noticias fallidas
-            if (scrapeData.noticias_fallidas > 0) {
-              setScrapingAlert({
-                total: newsToScrape.length,
-                exitosos: scrapeData.noticias_procesadas,
-                fallidos: scrapeData.noticias_fallidas,
-                errores: scrapeData.errores || []
+            const asyncRes = await fetch('/api/scraping/deep-async', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                noticias: newsToScrape,
+                region: selectedRegion || 'Nacional',
+                userId: session?.user?.id
               })
+            })
+
+            if (!asyncRes.ok) {
+              console.warn('Error iniciando scraping async')
             } else {
-              setScrapingAlert(null)
+              const { jobId } = await asyncRes.json()
+              console.log(`📋 Job de scraping creado: ${jobId}`)
+
+              // Polling del estado del job
+              const POLL_INTERVAL = 2000 // 2 segundos
+              const MAX_WAIT = 5 * 60 * 1000 // 5 minutos max
+              const startTime = Date.now()
+
+              const pollStatus = async (): Promise<any> => {
+                if (Date.now() - startTime > MAX_WAIT) {
+                  throw new Error('Timeout esperando scraping')
+                }
+
+                const statusRes = await fetch(`/api/scraping/job-status?id=${jobId}`)
+                const status = await statusRes.json()
+
+                if (status.status === 'completed') {
+                  return status.result
+                } else if (status.status === 'failed') {
+                  throw new Error(status.error || 'Error en scraping')
+                } else {
+                  // Seguir esperando
+                  await new Promise(r => setTimeout(r, POLL_INTERVAL))
+                  return pollStatus()
+                }
+              }
+
+              const scrapeData = await pollStatus()
+              console.log('✅ Scraping async completado')
+
+              if (scrapeData?.noticias_fallidas > 0) {
+                setScrapingAlert({
+                  total: newsToScrape.length,
+                  exitosos: scrapeData.noticias_procesadas,
+                  fallidos: scrapeData.noticias_fallidas,
+                  errores: scrapeData.errores || []
+                })
+              } else {
+                setScrapingAlert(null)
+              }
+            }
+          } else {
+            // Modo SYNC para desarrollo local
+            console.log('💻 Modo SYNC: usando scraping síncrono directo')
+
+            const scrapeRes = await fetch('/api/scraping/deep', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                noticias: newsToScrape,
+                region: selectedRegion || 'Nacional',
+                userId: session?.user?.id
+              })
+            })
+
+            if (!scrapeRes.ok) {
+              console.warn('Advertencia en scraping automático')
+            } else {
+              const scrapeData = await scrapeRes.json()
+              console.log('✅ Scraping automático completado')
+
+              if (scrapeData.noticias_fallidas > 0) {
+                setScrapingAlert({
+                  total: newsToScrape.length,
+                  exitosos: scrapeData.noticias_procesadas,
+                  fallidos: scrapeData.noticias_fallidas,
+                  errores: scrapeData.errores || []
+                })
+              } else {
+                setScrapingAlert(null)
+              }
             }
           }
         }

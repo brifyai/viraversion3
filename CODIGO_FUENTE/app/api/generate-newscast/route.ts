@@ -312,7 +312,13 @@ export async function POST(request: NextRequest) {
     let missingNewsInfo: { requestedCount: number; foundCount: number; missingTitles: string[] } | null = null
 
     if (specificNewsUrls && specificNewsUrls.length > 0) {
-      console.log(`🎯 Usando ${specificNewsUrls.length} URLs específicas`)
+      // ✅ MEJORA: Filtrar URLs duplicadas
+      const uniqueUrls: string[] = [...new Set(specificNewsUrls as string[])]
+      const hasDuplicates = uniqueUrls.length < specificNewsUrls.length
+      if (hasDuplicates) {
+        console.warn(`⚠️ Duplicados detectados: ${specificNewsUrls.length} → ${uniqueUrls.length} URLs únicas`)
+      }
+      console.log(`🎯 Usando ${uniqueUrls.length} URLs específicas${hasDuplicates ? ' (sin duplicados)' : ''}`)
 
       // ✅ MEJORA: Normalizar URLs para mejor matching
       const normalizeUrl = (url: string): string => {
@@ -339,7 +345,7 @@ export async function POST(request: NextRequest) {
       const { data: specificNews, error: specificError } = await supabase
         .from('noticias_scrapeadas')
         .select('*')
-        .in('url', specificNewsUrls)
+        .in('url', uniqueUrls)
 
       if (specificError) {
         console.error('Error fetching specific news:', specificError)
@@ -348,14 +354,14 @@ export async function POST(request: NextRequest) {
       selectedNews = specificNews || []
 
       // ✅ Si no encontramos todas, intentar match normalizado
-      if (selectedNews.length < specificNewsUrls.length) {
-        console.log(`🔍 Match exacto encontró ${selectedNews.length}/${specificNewsUrls.length}, intentando match normalizado...`)
+      if (selectedNews.length < uniqueUrls.length) {
+        console.log(`🔍 Match exacto encontró ${selectedNews.length}/${uniqueUrls.length}, intentando match normalizado...`)
 
         // Obtener URLs ya encontradas
         const foundUrls = new Set(selectedNews.map(n => normalizeUrl(n.url)))
 
         // URLs que faltan (normalizadas)
-        const missingNormalizedUrls = specificNewsUrls
+        const missingNormalizedUrls = uniqueUrls
           .map((url: string) => normalizeUrl(url))
           .filter((url: string) => !foundUrls.has(url))
 
@@ -383,10 +389,14 @@ export async function POST(request: NextRequest) {
 
       // ✅ Guardar info de noticias no encontradas para alertar al usuario
 
-      if (selectedNews.length < specificNewsUrls.length) {
-        console.warn(`⚠️ Solicitadas ${specificNewsUrls.length} noticias específicas, pero solo se encontraron ${selectedNews.length} en DB`)
+      if (selectedNews.length < uniqueUrls.length) {
+        console.warn(`⚠️ Solicitadas ${uniqueUrls.length} noticias específicas, pero solo se encontraron ${selectedNews.length} en DB`)
         const foundNormalizedUrls = new Set(selectedNews.map(n => normalizeUrl(n.url)))
-        const notFoundUrls = specificNewsUrls.filter((url: string) => !foundNormalizedUrls.has(normalizeUrl(url)))
+        const notFoundUrls = uniqueUrls.filter((url: string) => !foundNormalizedUrls.has(normalizeUrl(url)))
+
+        // 🔍 DEBUG: Log detallado para diagnosticar el problema
+        console.log(`   🔍 DEBUG: foundNormalizedUrls size = ${foundNormalizedUrls.size}`)
+        console.log(`   🔍 DEBUG: notFoundUrls.length = ${notFoundUrls.length}`)
 
         // Intentar obtener títulos de las noticias no encontradas desde la selección original
         const missingTitles = notFoundUrls.map((url: string) => {
@@ -402,7 +412,7 @@ export async function POST(request: NextRequest) {
         })
 
         missingNewsInfo = {
-          requestedCount: specificNewsUrls.length,
+          requestedCount: uniqueUrls.length,
           foundCount: selectedNews.length,
           missingTitles
         }

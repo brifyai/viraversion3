@@ -6,6 +6,13 @@
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
+# Netlify Functions configuration
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  # Background functions can run up to 15 minutes
+  # Named with -background suffix (e.g., generate-newscast-background.ts)
+
 # Build settings
 [build.environment]
   # Node version for build

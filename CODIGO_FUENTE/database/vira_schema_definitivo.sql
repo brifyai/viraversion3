@@ -419,6 +419,31 @@ CREATE TABLE IF NOT EXISTS "cola_tareas" (
 COMMENT ON TABLE "cola_tareas" IS 'Cola de tareas asíncronas del sistema';
 
 -- ==================================================
+-- TABLA: newscast_jobs
+-- Jobs de generación de noticieros (para Background Functions)
+-- ==================================================
+CREATE TABLE IF NOT EXISTS "newscast_jobs" (
+    "id" UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    "user_id" UUID REFERENCES "users"("id") ON DELETE CASCADE,
+    "status" TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+    "progress" INTEGER DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
+    "progress_message" TEXT,
+    "newscast_id" UUID REFERENCES "noticieros"("id") ON DELETE SET NULL,
+    "config" JSONB DEFAULT '{}',  -- Configuración del noticiero
+    "error" TEXT,
+    "started_at" TIMESTAMPTZ,
+    "completed_at" TIMESTAMPTZ,
+    "created_at" TIMESTAMPTZ DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS "idx_newscast_jobs_user_id" ON "newscast_jobs"("user_id");
+CREATE INDEX IF NOT EXISTS "idx_newscast_jobs_status" ON "newscast_jobs"("status");
+CREATE INDEX IF NOT EXISTS "idx_newscast_jobs_created_at" ON "newscast_jobs"("created_at");
+
+COMMENT ON TABLE "newscast_jobs" IS 'Jobs de generación de noticieros para Background Functions en Netlify';
+
+-- ==================================================
 -- TABLA: system_config
 -- Configuraciones globales del sistema (SUPER_ADMIN)
 -- ==================================================
@@ -676,6 +701,53 @@ CREATE INDEX IF NOT EXISTS idx_scraping_cache_expires ON "scraping_cache"("expir
 COMMENT ON TABLE "scraping_cache" IS 'Cache de escaneos de páginas principales para ahorrar créditos ScrapingBee';
 COMMENT ON COLUMN "scraping_cache"."noticias" IS 'Array JSON con noticias encontradas: [{titulo, url, categoria, fecha_publicacion}]';
 COMMENT ON COLUMN "scraping_cache"."expires_at" IS 'Fecha de expiración del cache (24 horas por defecto)';
+
+-- ==================================================
+-- TABLA: newscast_jobs
+-- Jobs de generación de noticieros asíncronos
+-- Para evitar timeouts en Netlify
+-- ==================================================
+CREATE TABLE IF NOT EXISTS "newscast_jobs" (
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "user_id" UUID NOT NULL,
+    "status" VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+    "progress" INTEGER DEFAULT 0,
+    "progress_message" TEXT,
+    "newscast_id" UUID,
+    "config" JSONB,
+    "error" TEXT,
+    "started_at" TIMESTAMPTZ,
+    "completed_at" TIMESTAMPTZ,
+    "created_at" TIMESTAMPTZ DEFAULT NOW(),
+    "updated_at" TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE "newscast_jobs" DISABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_newscast_jobs_user ON "newscast_jobs" (user_id);
+COMMENT ON TABLE "newscast_jobs" IS 'Jobs de generación de noticieros asíncronos para evitar timeouts en Netlify';
+
+-- ==================================================
+-- TABLA: scraping_jobs
+-- Jobs de scraping asíncronos
+-- Para evitar timeouts en Netlify
+-- ==================================================
+CREATE TABLE IF NOT EXISTS "scraping_jobs" (
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "user_id" UUID NOT NULL,
+    "status" VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+    "progress" INTEGER DEFAULT 0,
+    "total" INTEGER DEFAULT 0,
+    "noticias_procesadas" INTEGER DEFAULT 0,
+    "noticias_fallidas" INTEGER DEFAULT 0,
+    "result" JSONB,
+    "error" TEXT,
+    "created_at" TIMESTAMPTZ DEFAULT NOW(),
+    "completed_at" TIMESTAMPTZ
+);
+
+ALTER TABLE "scraping_jobs" DISABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_scraping_jobs_user ON "scraping_jobs" (user_id);
+COMMENT ON TABLE "scraping_jobs" IS 'Jobs de scraping asíncronos para evitar timeouts en Netlify';
 
 -- ==================================================
 -- FIN DEL SCHEMA
