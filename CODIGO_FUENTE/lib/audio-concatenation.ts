@@ -120,6 +120,13 @@ function writeString(view: DataView, offset: number, string: string) {
 }
 
 /**
+ * Check if URL is a valid remote URL (not local)
+ */
+function isRemoteUrl(url: string): boolean {
+    return url.startsWith('http://') || url.startsWith('https://')
+}
+
+/**
  * Main function to concatenate audio segments
  */
 export async function concatenateAudioSegments(
@@ -129,14 +136,31 @@ export async function concatenateAudioSegments(
     const audioContext = new AudioContext()
     const audioBuffers: AudioBuffer[] = []
 
-    // Download and decode all segments
-    for (let i = 0; i < segments.length; i++) {
-        const segment = segments[i]
+    // Filter out local URLs that can't be downloaded in production
+    const validSegments = segments.filter(segment => {
+        if (!isRemoteUrl(segment.url)) {
+            console.warn(`⚠️ Omitiendo audio local (no disponible en producción): ${segment.title || segment.url}`)
+            return false
+        }
+        return true
+    })
+
+    if (validSegments.length === 0) {
+        throw new Error('No hay audios válidos para descargar. Los audios locales no están disponibles en producción.')
+    }
+
+    if (validSegments.length < segments.length) {
+        console.warn(`⚠️ Se omitieron ${segments.length - validSegments.length} audios locales`)
+    }
+
+    // Download and decode all valid segments
+    for (let i = 0; i < validSegments.length; i++) {
+        const segment = validSegments[i]
 
         onProgress?.({
             stage: 'downloading',
             current: i + 1,
-            total: segments.length,
+            total: validSegments.length,
             message: `Descargando: ${segment.title || `Audio ${i + 1}`}`
         })
 
@@ -146,8 +170,13 @@ export async function concatenateAudioSegments(
             audioBuffers.push(audioBuffer)
         } catch (error) {
             console.error(`Error processing segment ${i}:`, error)
-            throw new Error(`Error al procesar: ${segment.title || `Audio ${i + 1}`}`)
+            // Skip failed segments instead of throwing
+            console.warn(`⚠️ Omitiendo segmento fallido: ${segment.title || `Audio ${i + 1}`}`)
         }
+    }
+
+    if (audioBuffers.length === 0) {
+        throw new Error('No se pudo descargar ningún audio')
     }
 
     // Concatenate buffers
