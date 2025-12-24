@@ -91,24 +91,32 @@ export async function POST(request: NextRequest) {
             const functionUrl = `${siteUrl}/.netlify/functions/generate-newscast-background`
 
             console.log(`📡 Invocando Background Function: ${functionUrl}`)
+            console.log(`   📋 Payload: jobId=${jobId}, config keys=${Object.keys(config).join(',')}`)
 
-            // Invocar de forma asíncrona (fire-and-forget)
-            fetch(functionUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    jobId,
-                    config: {
-                        ...config,
-                        userId: userId
-                    }
+            // IMPORTANTE: Esperar la respuesta inicial (202) antes de retornar
+            // Esto garantiza que la Background Function fue invocada correctamente
+            try {
+                const bgResponse = await fetch(functionUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jobId,
+                        config: {
+                            ...config,
+                            userId: userId
+                        }
+                    })
                 })
-            }).catch(err => {
-                console.error('Error invocando background function:', err)
-                // No esperamos la respuesta - es una background function
-            })
+
+                if (bgResponse.ok || bgResponse.status === 202) {
+                    console.log(`   ✅ Background function invocada exitosamente: ${bgResponse.status}`)
+                } else {
+                    const errorText = await bgResponse.text().catch(() => 'No body')
+                    console.error(`   ❌ Background function error: ${bgResponse.status} - ${errorText}`)
+                }
+            } catch (fetchError) {
+                console.error('   ❌ Error de red invocando background function:', fetchError)
+            }
 
         } else {
             // Desarrollo local: procesar directamente en el servidor

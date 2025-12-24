@@ -73,15 +73,34 @@ export async function POST(request: NextRequest) {
         // En Netlify: invocar Background Function
         // En desarrollo: procesar en background local
         if (isNetlify) {
-            console.log('🌐 Netlify detectado: invocando Background Function')
             const baseUrl = process.env.URL || process.env.NEXT_PUBLIC_APP_URL
+            const functionUrl = `${baseUrl}/.netlify/functions/scraping-background`
 
-            // Invocar Background Function (fire-and-forget)
-            fetch(`${baseUrl}/.netlify/functions/scraping-background`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ jobId, noticias, region, userId })
-            }).catch(err => console.error('Error invocando background function:', err))
+            console.log('🌐 Netlify detectado: invocando Background Function')
+            console.log(`   📡 URL: ${functionUrl}`)
+            console.log(`   📋 Payload: jobId=${jobId}, noticias=${noticias.length}`)
+
+            // IMPORTANTE: Esperar la respuesta inicial (202) antes de retornar
+            // Esto garantiza que la Background Function fue invocada correctamente
+            // Sin esto, la función puede terminar antes de que el fetch complete
+            try {
+                const bgResponse = await fetch(functionUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jobId, noticias, region, userId })
+                })
+
+                if (bgResponse.ok || bgResponse.status === 202) {
+                    console.log(`   ✅ Background function invocada exitosamente: ${bgResponse.status}`)
+                } else {
+                    const errorText = await bgResponse.text().catch(() => 'No body')
+                    console.error(`   ❌ Background function error: ${bgResponse.status} - ${errorText}`)
+                    // No fallamos, el job ya está creado y se puede reintentar
+                }
+            } catch (fetchError) {
+                console.error('   ❌ Error de red invocando background function:', fetchError)
+                // No fallamos, el job ya está creado y se puede reintentar
+            }
         } else {
             console.log('💻 Desarrollo: procesando en background local')
             processScrapingInBackground(jobId, noticias, region, userId)
