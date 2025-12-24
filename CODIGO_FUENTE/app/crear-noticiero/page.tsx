@@ -567,15 +567,49 @@ export default function CrearNoticiero() {
               const { jobId } = await asyncRes.json()
               console.log(`📋 Job de scraping creado: ${jobId}`)
 
-              // Usar Realtime en vez de polling (CERO function invocations!)
+              // Usar Realtime + Polling como fallback
               const MAX_WAIT = 5 * 60 * 1000 // 5 minutos max
 
               const scrapeData = await new Promise<any>((resolve, reject) => {
-                const timeout = setTimeout(() => {
+                let isResolved = false
+
+                const cleanup = () => {
+                  isResolved = true
+                  clearTimeout(timeout)
+                  clearInterval(pollInterval)
                   supabase.removeChannel(channel)
-                  reject(new Error('Timeout esperando scraping'))
+                }
+
+                const timeout = setTimeout(() => {
+                  if (!isResolved) {
+                    cleanup()
+                    reject(new Error('Timeout esperando scraping'))
+                  }
                 }, MAX_WAIT)
 
+                // FALLBACK: Polling cada 10 segundos (por si Realtime falla)
+                const pollInterval = setInterval(async () => {
+                  if (isResolved) return
+                  try {
+                    const pollRes = await fetch(`/api/job-status?type=scraping&id=${jobId}`)
+                    if (pollRes.ok) {
+                      const job = await pollRes.json()
+                      console.log(`[Polling Scraping] status=${job.status}, progress=${job.progress}%`)
+
+                      if (job.status === 'completed') {
+                        cleanup()
+                        resolve(job.result || job)
+                      } else if (job.status === 'failed') {
+                        cleanup()
+                        reject(new Error(job.error || 'Error en scraping'))
+                      }
+                    }
+                  } catch (e) {
+                    console.warn('[Polling Scraping] Error:', e)
+                  }
+                }, 10000) // 10 segundos
+
+                // PRINCIPAL: Realtime (instantáneo si funciona)
                 const channel = supabase
                   .channel(`scraping-${jobId}`)
                   .on(
@@ -587,16 +621,15 @@ export default function CrearNoticiero() {
                       filter: `id=eq.${jobId}`
                     },
                     (payload: any) => {
+                      if (isResolved) return
                       const job = payload.new
                       console.log(`[Realtime Scraping] status=${job.status}, progress=${job.progress}/${job.total}`)
 
                       if (job.status === 'completed') {
-                        clearTimeout(timeout)
-                        supabase.removeChannel(channel)
+                        cleanup()
                         resolve(job.result)
                       } else if (job.status === 'failed') {
-                        clearTimeout(timeout)
-                        supabase.removeChannel(channel)
+                        cleanup()
                         reject(new Error(job.error || 'Error en scraping'))
                       }
                     }
