@@ -116,10 +116,13 @@ async function generateTTSAudio(
         const data = await response.json()
 
         if (data.success && data.path) {
-            // Calculate approximate duration based on word count
+            // Calculate duration using adjusted WPM (same formula as generate-newscast-background)
             const wordCount = text.split(/\s+/).length
-            const wpm = 175 // Average WPM
-            const duration = Math.round((wordCount / wpm) * 60)
+            const baseWPM = 175
+            const CORRECTION_FACTOR = 0.95
+            const speedFactor = 1 + ((voiceSettings?.speed ?? 0) / 100)
+            const effectiveWPM = Math.round(baseWPM * speedFactor * CORRECTION_FACTOR)
+            const duration = Math.round((wordCount / effectiveWPM) * 60)
 
             return {
                 success: true,

@@ -964,47 +964,88 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
         }
 
         // ============================================================
-        // 5. CIERRE EXTENDIDO SI FALTA TIEMPO (tolerancia ±5s)
+        // 5. AJUSTE DE DURACIÓN (PRIMERO: extender noticias)
         // ============================================================
-        const tiempoActual = timeline.reduce((sum, item) => sum + (item.duration || 0), 0)
+        let tiempoActual = timeline.reduce((sum, item) => sum + (item.duration || 0), 0)
         const outroDuracionEstimada = 8 // Outro corto ~8s
-        const tiempoFaltante = targetDuration - tiempoActual - outroDuracionEstimada
+        let tiempoFaltante = targetDuration - tiempoActual - outroDuracionEstimada
 
+        // PASO 1: Si falta tiempo (>5s), extender las noticias existentes
+        if (tiempoFaltante > 5) {
+            console.log(`⚖️ Ajuste de duración: falta ${Math.round(tiempoFaltante)}s - Extendiendo noticias...`)
+
+            // Encontrar noticias que se pueden extender
+            const noticiasAjustables = timeline.filter(t =>
+                t.type === 'news' &&
+                t.originalContent &&
+                t.originalContent.length > 100
+            )
+
+            // SIEMPRE intentar extender noticias primero (sin límite de tiempo)
+            if (noticiasAjustables.length > 0) {
+                // Determinar cuántas noticias extender basado en el tiempo faltante
+                // Más tiempo faltante = más noticias a extender
+                const noticiasAExtender = tiempoFaltante > 60
+                    ? Math.min(5, noticiasAjustables.length)  // Si falta mucho, extender hasta 5
+                    : Math.min(3, noticiasAjustables.length)  // Si falta poco, extender hasta 3
+
+                const tiempoPorNoticia = Math.ceil(tiempoFaltante / noticiasAExtender)
+                const palabrasPorNoticia = Math.round((tiempoPorNoticia / 60) * effectiveWPM)
+
+                console.log(`   📊 Distribuyendo ${Math.round(tiempoFaltante)}s entre ${noticiasAExtender} noticias (+${palabrasPorNoticia} palabras c/u)`)
+
+                for (let i = 0; i < noticiasAExtender; i++) {
+                    const noticiaAjustar = noticiasAjustables[noticiasAjustables.length - 1 - i]
+                    const palabrasActuales = noticiaAjustar.content.split(/\s+/).length
+                    const palabrasObjetivo = palabrasActuales + palabrasPorNoticia
+
+                    console.log(`   📝 Re-humanizando "${noticiaAjustar.title?.substring(0, 35)}..."`)
+
+                    const { content: nuevoContenido, success } = await humanizeText(
+                        noticiaAjustar.originalContent,
+                        region,
+                        palabrasObjetivo
+                    )
+
+                    if (success && nuevoContenido) {
+                        const nuevaPalabras = nuevoContenido.split(/\s+/).length
+                        const nuevaDuracion = Math.ceil((nuevaPalabras / effectiveWPM) * 60)
+                        const duracionAnterior = noticiaAjustar.duration
+
+                        noticiaAjustar.content = nuevoContenido
+                        noticiaAjustar.duration = nuevaDuracion
+                        currentDuration = currentDuration - duracionAnterior + nuevaDuracion
+
+                        console.log(`      ✅ ${duracionAnterior}s → ${nuevaDuracion}s (+${nuevaDuracion - duracionAnterior}s)`)
+                    }
+                }
+
+                // Recalcular tiempo faltante después de extender noticias
+                tiempoActual = timeline.reduce((sum, item) => sum + (item.duration || 0), 0)
+                tiempoFaltante = targetDuration - tiempoActual - outroDuracionEstimada
+                console.log(`   📊 Después de ajuste: falta ${Math.round(tiempoFaltante)}s`)
+            }
+        }
+
+        // PASO 2: Solo si DESPUÉS de extender noticias aún falta >30s, usar Cierre Extendido como respaldo
         let outroText = ''
 
-        // Si falta más de 5 segundos, generar cierre extendido
-        if (tiempoFaltante > 5) {
-            // Calcular palabras necesarias para llenar el tiempo faltante
-            const palabrasCierre = Math.round((tiempoFaltante / 60) * effectiveWPM)
-            console.log(`⏱️ Tiempo faltante: ${Math.round(tiempoFaltante)}s → Generando cierre IA (${palabrasCierre} palabras)`)
+        if (tiempoFaltante > 30) {
+            console.log(`⏱️ Aún falta ${Math.round(tiempoFaltante)}s después de ajuste → Generando Cierre Extendido`)
 
-            // Obtener títulos de las noticias que SÍ se cubrieron
+            const palabrasCierre = Math.round((tiempoFaltante / 60) * effectiveWPM)
+
             const noticiasCubiertas = timeline
                 .filter((item: any) => item.type === 'news')
                 .map((item: any) => item.title)
                 .slice(0, 5)
 
-            const resumenNoticias = noticiasCubiertas
-                .map((titulo: string, i: number) => `${i + 1}. ${titulo}`)
-                .join('\n')
+            const resumenNoticias = noticiasCubiertas.join('; ')
 
-            const cierrePrompt = `Eres el locutor de ${displayName}. Genera un cierre de noticiero de EXACTAMENTE ${palabrasCierre} palabras (cuenta las palabras).
-
-📰 NOTICIAS CUBIERTAS:
-${resumenNoticias}
-
-📝 ESTRUCTURA DEL CIERRE (${palabrasCierre} palabras EXACTAS):
-1. Transición natural: "Y así llegamos al final de nuestra edición..." (10 palabras)
-2. Resumen breve de 2-3 noticias destacadas (${Math.max(20, palabrasCierre - 30)} palabras)
-3. Despedida: "Esto fue ${displayName}. Gracias por acompañarnos. Hasta la próxima." (10 palabras)
-
-⚠️ IMPORTANTE:
-- DEBES escribir EXACTAMENTE ${palabrasCierre} palabras, NI MÁS NI MENOS
-- Lenguaje natural de radio chilena
-- NO uses corchetes, emojis ni placeholders
-- Cuenta tus palabras antes de responder
-
-→ Solo el texto del cierre, nada más.`
+            const cierrePrompt = `Genera un cierre de noticiero de ${palabrasCierre} palabras para ${displayName}.
+Resume brevemente: ${resumenNoticias}
+Usa tono profesional de radio chilena. Incluye despedida final.
+NO uses corchetes ni placeholders. Texto listo para leer.`
 
             let cierreExtendido = ''
             try {
@@ -1013,10 +1054,7 @@ ${resumenNoticias}
                     headers: getChutesHeaders(),
                     body: JSON.stringify({
                         model: CHUTES_CONFIG.model,
-                        messages: [
-                            { role: 'system', content: `Eres locutor de radio chilena. Generas cierres de noticiero de EXACTAMENTE la cantidad de palabras solicitada. Cuenta las palabras antes de responder.` },
-                            { role: 'user', content: cierrePrompt }
-                        ],
+                        messages: [{ role: 'user', content: cierrePrompt }],
                         max_tokens: palabrasCierre * 5,
                         temperature: 0.5
                     })
@@ -1025,20 +1063,16 @@ ${resumenNoticias}
                 if (cierreResponse.ok) {
                     const cierreData = await cierreResponse.json()
                     cierreExtendido = cierreData.choices?.[0]?.message?.content?.trim() || ''
-                    const palabrasGeneradas = cierreExtendido.split(/\s+/).length
-                    console.log(`✅ Cierre IA generado: ${palabrasGeneradas} palabras (objetivo: ${palabrasCierre})`)
+                    console.log(`✅ Cierre IA generado: ${cierreExtendido.split(/\s+/).length} palabras`)
                 }
             } catch (cierreError) {
                 console.warn('⚠️ Error generando cierre IA, usando fallback')
             }
 
-            // Fallback mejorado si falla la IA o es muy corto
-            if (!cierreExtendido || cierreExtendido.split(/\s+/).length < palabrasCierre * 0.5) {
-                const noticiasResumen = noticiasCubiertas.slice(0, 2).join(' y ')
-                cierreExtendido = `Y así llegamos al cierre de nuestra edición informativa. Hoy les trajimos las noticias más importantes del día, incluyendo ${noticiasResumen}. Seguiremos informando con la actualidad que importa a nuestra región. Esto fue ${displayName}. Les agradecemos su sintonía y los invitamos a seguir conectados. Que tengan un excelente día. Hasta la próxima.`
+            if (!cierreExtendido || cierreExtendido.split(/\s+/).length < 20) {
+                cierreExtendido = `Y así llegamos al cierre de nuestra edición informativa. Hoy les trajimos las noticias más importantes. Esto fue ${displayName}. Gracias por su sintonía. Hasta la próxima.`
             }
 
-            // Agregar segmento de cierre extendido
             const cierreDuration = Math.ceil((cierreExtendido.split(/\s+/).length / effectiveWPM) * 60)
             timeline.push({
                 id: 'cierre-extendido',
@@ -1051,32 +1085,135 @@ ${resumenNoticias}
             })
             currentDuration += cierreDuration
 
-            // Outro corto después del cierre extendido
-            outroText = `Hasta la próxima.`
+            console.log(`📊 Cierre extendido agregado. No se agregará outro adicional.`)
         } else if (tiempoFaltante < -5) {
-            // Si nos pasamos más de 5 segundos, outro muy corto
             console.log(`⏱️ Tiempo excedido: ${Math.abs(Math.round(tiempoFaltante))}s extra`)
             outroText = `Esto fue ${displayName}. Hasta pronto.`
         } else {
-            // Outro normal (estamos dentro de ±5s)
             outroText = `Eso es todo por ahora desde ${displayName}. Gracias por acompañarnos en esta edición. Hasta la próxima.`
         }
 
-        // OUTRO
-        const outroWordCount = outroText.split(/\s+/).length
-        const outroDuration = Math.ceil((outroWordCount / effectiveWPM) * 60)
-        timeline.push({
-            id: 'outro',
-            type: 'outro',
-            title: 'Cierre',
-            content: outroText,
-            duration: outroDuration,
-            isHumanized: true,
-            voiceId: voiceModel || 'default'
-        })
-        currentDuration += outroDuration
+        // OUTRO - Solo agregar si NO hay cierre extendido
+        const hayCierreExtendido = timeline.some(t => t.id === 'cierre-extendido')
+        if (!hayCierreExtendido && outroText) {
+            const outroWordCount = outroText.split(/\s+/).length
+            const outroDuration = Math.ceil((outroWordCount / effectiveWPM) * 60)
+            timeline.push({
+                id: 'outro',
+                type: 'outro',
+                title: 'Cierre',
+                content: outroText,
+                duration: outroDuration,
+                isHumanized: true,
+                voiceId: voiceModel || 'default'
+            })
+            currentDuration += outroDuration
+        }
 
         console.log(`📊 Timeline completado: ${timeline.length} items, ${currentDuration}s total (objetivo: ${targetDuration}s)`)
+
+        // ============================================================
+        // PASO FINAL: VERIFICACIÓN Y AJUSTE FINO DE DURACIÓN
+        // ============================================================
+        // 
+        // DOCUMENTACIÓN IMPORTANTE (2024-12-24):
+        // ----------------------------------------
+        // La IA de humanización (Chutes AI / DeepSeek) NO respeta el objetivo
+        // de palabras solicitado. Ejemplos reales:
+        //   - Pedimos 119 palabras → genera 95 (20% menos)
+        //   - Pedimos 207 palabras → genera 178 (14% menos)
+        //   - Pedimos +18 palabras → genera -3 palabras (inverso!)
+        //
+        // SOLUCIÓN: Factor de compensación 2x
+        // Si necesitas +20 palabras, pedir +40 (el doble).
+        // Esto compensa la tendencia de la IA a generar menos.
+        //
+        // Si en el futuro se cambia de IA (ej: GPT-4, Claude), 
+        // revisar si el FACTOR_COMPENSACION sigue siendo necesario.
+        // ============================================================
+
+        const TOLERANCIA = 5  // segundos de margen permitido (±5s)
+        const MAX_INTENTOS = 3  // máximo intentos de ajuste
+        const FACTOR_COMPENSACION = 2.0  // Pedir el DOBLE de palabras necesarias
+        const FACTORES_PROGRESIVOS = [0.6, 0.8, 1.0]  // Más agresivo en cada intento
+
+        for (let intento = 0; intento < MAX_INTENTOS; intento++) {
+            const tiempoActualVerif = timeline.reduce((sum, item) => sum + (item.duration || 0), 0)
+            const diferencia = tiempoActualVerif - targetDuration
+
+            // Si está dentro de tolerancia, salir del loop
+            if (Math.abs(diferencia) <= TOLERANCIA) {
+                console.log(`✅ Tiempo dentro de tolerancia: ${tiempoActualVerif}s (${diferencia >= 0 ? '+' : ''}${diferencia}s del objetivo)`)
+                break
+            }
+
+            const factorProgresivo = FACTORES_PROGRESIVOS[intento]
+            console.log(`⚠️ Verificación ${intento + 1}/${MAX_INTENTOS}: diferencia de ${diferencia > 0 ? '+' : ''}${Math.round(diferencia)}s`)
+
+            // Obtener noticias ajustables
+            const noticiasAjustables = timeline.filter(t =>
+                t.type === 'news' &&
+                t.originalContent &&
+                t.originalContent.length > 100
+            )
+
+            if (noticiasAjustables.length === 0) {
+                console.log(`   ⚠️ No hay noticias ajustables`)
+                break
+            }
+
+            // Seleccionar noticia diferente en cada intento (rotar)
+            const indiceNoticia = (noticiasAjustables.length - 1 - intento) % noticiasAjustables.length
+            const noticiaAjustar = noticiasAjustables[Math.max(0, indiceNoticia)]
+            const palabrasActuales = noticiaAjustar.content.split(/\s+/).length
+
+            // Calcular ajuste CON FACTOR DE COMPENSACIÓN 2x
+            // La IA tiende a generar menos palabras de las pedidas
+            const segundosNecesarios = Math.abs(diferencia) * factorProgresivo
+            const palabrasBase = Math.round((segundosNecesarios / 60) * effectiveWPM)
+            const palabrasConCompensacion = Math.round(palabrasBase * FACTOR_COMPENSACION)
+
+            let palabrasObjetivo: number
+            if (diferencia > TOLERANCIA) {
+                // Nos pasamos → REDUCIR (aquí la compensación es inversa)
+                palabrasObjetivo = Math.max(60, palabrasActuales - palabrasConCompensacion)
+                console.log(`   📉 Reduciendo: ${palabrasActuales} → ${palabrasObjetivo} palabras (base: -${palabrasBase}, comp: -${palabrasConCompensacion})`)
+            } else {
+                // Falta → AGREGAR (aquí aplicamos 2x)
+                palabrasObjetivo = palabrasActuales + palabrasConCompensacion
+                console.log(`   📈 Extendiendo: ${palabrasActuales} → ${palabrasObjetivo} palabras (base: +${palabrasBase}, comp: +${palabrasConCompensacion})`)
+            }
+
+            // Re-humanizar
+            const { content: nuevoContenido, success } = await humanizeText(
+                noticiaAjustar.originalContent,
+                region,
+                palabrasObjetivo
+            )
+
+            if (success && nuevoContenido) {
+                const nuevaPalabras = nuevoContenido.split(/\s+/).length
+                const nuevaDuracion = Math.ceil((nuevaPalabras / effectiveWPM) * 60)
+                const duracionAnterior = noticiaAjustar.duration
+
+                noticiaAjustar.content = nuevoContenido
+                noticiaAjustar.duration = nuevaDuracion
+                currentDuration = currentDuration - duracionAnterior + nuevaDuracion
+
+                const cambio = nuevaDuracion - duracionAnterior
+                console.log(`   ✅ Ajustado: ${duracionAnterior}s → ${nuevaDuracion}s (${cambio >= 0 ? '+' : ''}${cambio}s)`)
+
+                // Verificar resultado parcial
+                const tiempoNuevo = timeline.reduce((sum, item) => sum + (item.duration || 0), 0)
+                const nuevaDiferencia = tiempoNuevo - targetDuration
+                console.log(`   📊 Tiempo actual: ${tiempoNuevo}s (${nuevaDiferencia >= 0 ? '+' : ''}${nuevaDiferencia}s del objetivo)`)
+            }
+        }
+
+        // Log final
+        const tiempoFinalDefinitivo = timeline.reduce((sum, item) => sum + (item.duration || 0), 0)
+        const diferenciaDefinitiva = tiempoFinalDefinitivo - targetDuration
+        console.log(`📊 Tiempo final definitivo: ${tiempoFinalDefinitivo}s (${diferenciaDefinitiva >= 0 ? '+' : ''}${diferenciaDefinitiva}s del objetivo)`)
 
         // ============================================================
         // 6. GUARDAR NOTICIERO EN DB
@@ -1107,7 +1244,7 @@ ${resumenNoticias}
 
         if (insertError) {
             console.error('Error guardando noticiero:', insertError)
-            throw new Error(`Error guardando noticiero: ${insertError.message}`)
+            throw new Error(`Error guardando noticiero: ${insertError.message} `)
         }
 
         console.log(`✅ Noticiero guardado: ${newscastId} (${currentDuration}s)`)
