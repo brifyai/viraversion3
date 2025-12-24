@@ -45,6 +45,7 @@ import { BackgroundMusicConfig } from './components/BackgroundMusicConfig'
 import { BackgroundMusicBar } from './components/BackgroundMusicBar'
 import { GenerateAudioButton } from './components/GenerateAudioButton'
 import { TimelineSummary } from './components/TimelineSummary'
+import { NewscastAudioPlayer } from '@/components/NewscastAudioPlayer'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -161,7 +162,7 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
       if (status === 'loading') return
 
       const isTemp = params.id.startsWith('temp_')
-      const source = searchParams.get('source')
+      const source = searchParams?.get('source')
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.id)
 
       console.log('🔍 ID:', params.id, '| isTemp:', isTemp, '| source:', source, '| isUuid:', isUuid)
@@ -738,31 +739,28 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
           </CardContent>
         </Card>
 
-        {newscast.url_audio && (
-          <Card className="mb-6 border-green-200 bg-green-50">
-            <CardHeader>
-              <CardTitle className="flex items-center text-green-800">
-                <CheckCircle className="mr-2 h-5 w-5" />
-                Audio Final Generado
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <audio controls className="w-full mb-4">
-                <source src={getAudioUrl(newscast.url_audio)} type="audio/mpeg" />
-              </audio>
-              <Button
-                variant="outline"
-                onClick={() => window.open(getAudioUrl(newscast.url_audio), '_blank')}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Descargar MP3
-              </Button>
-            </CardContent>
-          </Card>
-        )}
+        {/* Reproductor de Audio con playlist y descarga - Solo visible después de generar audio */}
+        {newscast.estado === 'completado' &&
+          timelineData.timeline.filter(item => item.type !== 'ad' && item.audioUrl).length >= 3 && (
+            <Card className="mb-6 border-green-200 bg-green-50">
+              <CardHeader>
+                <CardTitle className="flex items-center text-green-800">
+                  <CheckCircle className="mr-2 h-5 w-5" />
+                  Reproductor del Noticiero
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <NewscastAudioPlayer
+                  timeline={timelineData.timeline}
+                  newscastName={newscast.titulo || `Noticiero ${timelineData.metadata.region}`}
+                />
+              </CardContent>
+            </Card>
+          )}
 
         <div className="flex gap-4">
-          {!newscast.url_audio && (
+          {/* Solo mostrar botón de generar si el audio no está completado */}
+          {newscast.estado !== 'completado' && (
             <GenerateAudioButton
               newscastId={params.id}
               selectedNewsIds={selectedNewsIds}
@@ -772,6 +770,7 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
                 setNewscast(prev => prev ? { ...prev, url_audio: audioUrl, estado: 'completado' } : null)
               }}
               onGeneratingChange={setIsGeneratingAudio}
+              onComplete={reloadTimeline}
             />
           )}
 

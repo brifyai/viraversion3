@@ -750,12 +750,42 @@ CREATE INDEX IF NOT EXISTS idx_scraping_jobs_user ON "scraping_jobs" (user_id);
 COMMENT ON TABLE "scraping_jobs" IS 'Jobs de scraping asíncronos para evitar timeouts en Netlify';
 
 -- ==================================================
+-- TABLA: finalize_jobs
+-- Jobs de finalización de audio para evitar timeouts
+-- ==================================================
+CREATE TABLE IF NOT EXISTS "finalize_jobs" (
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "user_id" UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    "newscast_id" UUID NOT NULL REFERENCES noticieros(id) ON DELETE CASCADE,
+    "status" VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+    "progress" INTEGER DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
+    "progress_message" TEXT DEFAULT 'Job creado, esperando procesamiento...',
+    "duration" INTEGER DEFAULT NULL,
+    "config" JSONB DEFAULT '{}',
+    "error" TEXT DEFAULT NULL,
+    "created_at" TIMESTAMPTZ DEFAULT NOW(),
+    "completed_at" TIMESTAMPTZ DEFAULT NULL,
+    "updated_at" TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE "finalize_jobs" DISABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_finalize_jobs_user ON "finalize_jobs" (user_id);
+CREATE INDEX IF NOT EXISTS idx_finalize_jobs_newscast ON "finalize_jobs" (newscast_id);
+COMMENT ON TABLE "finalize_jobs" IS 'Jobs de finalización de audio asíncronos para evitar timeouts en Netlify';
+
+-- ==================================================
 -- SUPABASE REALTIME
 -- Habilitar notificaciones en tiempo real para jobs
 -- ==================================================
 -- Esto permite que el frontend reciba updates sin polling
 ALTER PUBLICATION supabase_realtime ADD TABLE newscast_jobs;
 ALTER PUBLICATION supabase_realtime ADD TABLE scraping_jobs;
+ALTER PUBLICATION supabase_realtime ADD TABLE finalize_jobs;
+
+-- Habilitar REPLICA IDENTITY FULL para enviar todos los campos en updates
+ALTER TABLE newscast_jobs REPLICA IDENTITY FULL;
+ALTER TABLE scraping_jobs REPLICA IDENTITY FULL;
+ALTER TABLE finalize_jobs REPLICA IDENTITY FULL;
 
 -- ==================================================
 -- FIN DEL SCHEMA

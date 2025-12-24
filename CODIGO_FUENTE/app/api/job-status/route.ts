@@ -5,13 +5,16 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 /**
- * GET /api/job-status?id=<jobId>
- * Consulta el estado de un job de generación de noticiero
+ * GET /api/job-status?id=<jobId>&type=<newscast|finalize|scraping>
+ * Consulta el estado de un job de generación
+ * 
+ * type: newscast (default) | finalize | scraping
  */
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url)
         const jobId = searchParams.get('id')
+        const jobType = searchParams.get('type') || 'newscast'
 
         if (!jobId) {
             return NextResponse.json(
@@ -20,8 +23,23 @@ export async function GET(request: NextRequest) {
             )
         }
 
+        // Determinar tabla según tipo
+        let tableName: string
+        switch (jobType) {
+            case 'finalize':
+                tableName = 'finalize_jobs'
+                break
+            case 'scraping':
+                tableName = 'scraping_jobs'
+                break
+            case 'newscast':
+            default:
+                tableName = 'newscast_jobs'
+                break
+        }
+
         const { data: job, error } = await supabaseAdmin
-            .from('newscast_jobs')
+            .from(tableName)
             .select('*')
             .eq('id', jobId)
             .single()
@@ -33,12 +51,14 @@ export async function GET(request: NextRequest) {
             )
         }
 
+        // Respuesta unificada
         return NextResponse.json({
             id: job.id,
             status: job.status,
             progress: job.progress,
             progressMessage: job.progress_message,
             newscastId: job.newscast_id,
+            duration: job.duration,
             error: job.error,
             startedAt: job.started_at,
             completedAt: job.completed_at,
