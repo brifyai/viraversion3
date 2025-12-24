@@ -176,7 +176,8 @@ export function GenerateAudioButton({
                     console.log(`[Realtime Audio] Subscription: ${status}`)
                 })
 
-            // 4. Fallback: Polling cada 5 segundos usando API route (evita 401)
+            // 4. Fallback: Polling cada 30 segundos (solo si Realtime falla)
+            // NOTA: Intervalo largo para ahorrar requests en plan de prueba
             pollIntervalRef.current = setInterval(async () => {
                 try {
                     const pollResponse = await fetch(`/api/job-status?type=finalize&id=${jobId}`)
@@ -206,7 +207,7 @@ export function GenerateAudioButton({
                 } catch (err) {
                     console.error('[Polling Audio] Error:', err)
                 }
-            }, 5000)
+            }, 30000)  // 30 segundos en vez de 5
 
         } catch (err) {
             cleanupSubscription()

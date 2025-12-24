@@ -145,6 +145,58 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
   })
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false)
 
+  // Función para recargar el noticiero cuando el audio termina de generarse
+  const reloadTimeline = async () => {
+    console.log('🔄 Recargando timeline después de generar audio...')
+    try {
+      const { data, error } = await supabase
+        .from('noticieros')
+        .select('*')
+        .eq('id', params.id)
+        .single()
+
+      if (error) throw error
+      if (!data) throw new Error('Noticiero no encontrado')
+
+      console.log('✅ Noticiero recargado:', data.estado)
+      setNewscast(data)
+
+      // Procesar timeline actualizado con audioUrls
+      let timelineRaw = data.datos_timeline
+      if (typeof timelineRaw === 'string') {
+        timelineRaw = JSON.parse(timelineRaw)
+      }
+
+      if (timelineRaw?.timeline) {
+        const updatedTimeline: TimelineData = {
+          timeline: timelineRaw.timeline.map((item: any, index: number) => ({
+            id: item.id || `item-${index}`,
+            title: item.title || item.titulo || 'Sin título',
+            content: item.content || item.contenido || '',
+            type: item.type || item.tipo || 'news',
+            category: item.category || item.categoria || 'general',
+            duration: item.duration || item.duracion || 30,
+            audioUrl: item.audioUrl || item.url_audio,
+            versions: item.versions,
+            activeVersion: item.activeVersion
+          })),
+          metadata: timelineRaw.metadata || {
+            totalDuration: data.duracion_segundos || 0,
+            targetDuration: data.duracion_segundos || 900,
+            newsCount: timelineRaw.timeline.length,
+            region: data.region || 'Sin región',
+            generatedAt: data.created_at
+          }
+        }
+        setTimelineData(updatedTimeline)
+      }
+
+      toast.success('Timeline actualizado')
+    } catch (err) {
+      console.error('Error recargando timeline:', err)
+    }
+  }
+
   // Timeline is read-only during audio generation or after audio is complete
   const isReadOnly = isGeneratingAudio || !!newscast?.url_audio
 
@@ -559,10 +611,7 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
     setSelectedNewsIds([])
   }
 
-  const reloadTimeline = async () => {
-    // Reutilizamos la lógica de carga inicial o simplemente recargamos la página
-    window.location.reload()
-  }
+  // reloadTimeline está definido arriba en la línea 149
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
