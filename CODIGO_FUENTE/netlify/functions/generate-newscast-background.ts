@@ -1,5 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 import { CHUTES_CONFIG, getChutesHeaders } from './lib/chutes-config'
+import {
+    getDirectorPrompt,
+    getHumanizerSystemPrompt,
+    getHumanizerUserPrompt,
+    getReductionPrompt,
+    getCierrePrompt,
+    ANTI_REPETITION_SYSTEM
+} from './prompts'
 
 // ============================================================
 // BACKGROUND FUNCTION: Generate Newscast (FULL VERSION)
@@ -166,19 +174,12 @@ async function planificarNoticiero(
     const segundosPorNoticia = Math.floor(tiempoParaNoticias / noticias.length)
     const palabrasPorNoticia = Math.round((segundosPorNoticia / 60) * wpm)
 
-    const DIRECTOR_PROMPT = `Eres el director de un noticiero de radio chileno.
-Planifica este noticiero ordenando las noticias por impacto narrativo.
-
-NOTICIAS:
-${noticias.map((n, i) => `${i + 1}. [${n.categoria || 'general'}] "${n.titulo}"`).join('\n')}
-
-INSTRUCCIONES:
-- Ordena para máximo impacto (empezar fuerte, variar, cerrar memorable)
-- Asigna ~${palabrasPorNoticia} palabras por noticia
-- Duración total: ${duracionObjetivo}s
-
-Responde SOLO con JSON:
-{"noticias": [{"id": "...", "orden": 1, "palabras_objetivo": ${palabrasPorNoticia}, "es_destacada": true}]}`
+    // Usar prompt centralizado
+    const DIRECTOR_PROMPT = getDirectorPrompt({
+        noticias,
+        palabrasPorNoticia,
+        duracionObjetivo
+    })
 
     try {
         const response = await fetch(CHUTES_CONFIG.endpoints.chatCompletions, {
@@ -333,185 +334,137 @@ async function humanizeText(
     }
     const topicAnchor = extractTopic(cleanedText)
 
-    // ============================================================
-    // PROMPT v6 - TTS READY + Anti-Comas + Anclaje Temático
-    // ============================================================
-    const systemPrompt = `Eres un editor y locutor profesional de radio en Chile. Tu tarea es transformar noticias en **guiones radiales naturales y fluidos para TTS** (texto a voz).
+    // Usar prompts centralizados
+    const systemPrompt = getHumanizerSystemPrompt(targetWords)
+    const userPrompt = getHumanizerUserPrompt({
+        region,
+        topicAnchor,
+        cleanedText,
+        transitionPhrase
+    })
 
-⚠️ OBJETIVO PRINCIPAL: Que el texto **suene como si un locutor de radio lo estuviera leyendo en vivo**, no como una lista de datos.
+    // Reintentar con backoff exponencial para errores 429
+    const MAX_RETRIES = 3
+    const BASE_DELAY = 2000  // 2 segundos base
 
-✅ DEBES:
-- **Priorizar la fluidez sobre la longitud estricta de las oraciones.** Usa oraciones completas, pero **conéctalas de manera natural**. **Controla la respiración para TTS:** Cada oración debe poder leerse en UNA sola respiración (ideal 12-18 palabras, máximo 20).
-- **Usar comas CON PROPÓSITO:** Solo para pausas naturales, enumeraciones cortas, o conectar ideas relacionadas **dentro de la misma oración**. Ej: "En el vehículo viajaba una familia de cuatro personas, donde el conductor falleció en el acto".
-- **Variar la longitud de las frases.** Mezcla frases cortas (de impacto) con algunas más largas (de contexto) para crear un ritmo auditivo agradable.
-- **Usar un lenguaje radial chileno estándar y coloquial.** Ej: "chocó por detrás", "quedó grave", "fue detenido".
-- **Construir una mini-narrativa:** Conectar los hechos de forma lógica (qué pasó, dónde, consecuencias, estado de la investigación).
-- **Cerrar con una frase que dé un sentido de conclusión** al bloque informativo.
-- **CORREGIR ERRORES DE TEXTO:** Si ves "(s)" después de un cargo, ELIMÍNALO completamente (ej: "Seremi (s) de Salud" → "Seremi de Salud")
-- **CORREGIR TYPOS:** Arregla errores como "Gustav0" → "Gustavo", "G0biern0" → "Gobierno"
-
-❌ NUNCA:
-- Escribas una sucesión de oraciones ultra-cortas y desconectadas (estilo "punto, punto, punto").
-- Uses comas para separar ideas totalmente distintas (ahí sí es punto).
-- Incluyas frases redundantes como "se informa que" o "se supo que".
-- Inventes datos o declaraciones.
-- Introduzcas temas ajenos al texto original.
-
-🧠 REGLA DE ORO CORREGIDA:
-> "Si al leer en voz alta suenas como un robot que enumera datos… falta conexión. Usa una coma o une las ideas en una oración más larga y natural."
-
-📝 ESTRUCTURA NATURAL:
-1. **Gancho/Lead:** La noticia en su esencia.
-2. **Cuerpo/Contexto:** Los detalles importantes conectados con fluidez.
-3. **Consecuencia/Desenlace:** Qué pasó después y el estado actual.
-4. **Cierre:** Una oración que redondea la información.
-
-🎯 EXTENSIÓN: ${targetWords} palabras. Es preferible un texto un poco más largo que suene natural, a uno ultra-corto que suene artificial.
-
-DEVUELVES ÚNICAMENTE el guion final. Nada más.`
-
-    const userPrompt = `Actúa como un locutor de radio chileno. Tu radio está ubicada en ${region}.
-
-🎯 **ANÁLISIS GEOGRÁFICO (HACER PRIMERO):**
-1. Lee la noticia y DETERMINA: ¿Ocurre en ${region} o en otra región?
-2. **PISTAS:** Busca "seremi de...", "municipalidad de...", nombres de ciudades
-3. **DECISIÓN:**
-   - Si es en ${region} → Noticia LOCAL
-   - Si es en otra región → Noticia EXTERNA
-
-🎯 **NOTICIA PRINCIPAL:** "${topicAnchor}"
-
-🗣️ **COMO LOCUTAR PARA TTS:**
-- **PARA TTS (TEXT-TO-SPEECH):**
-  • Máximo 20-22 palabras por oración (para respiración natural)
-  • Usa comas SOLO para pausas breves dentro de la misma idea
-  • Evita oraciones subordinadas complejas
-  • Simplifica términos técnicos: "zarpe" → "partida", "tanquero" → "buque petrolero"
-
-- **SEGÚN TIPO DE NOTICIA:**
-  • **LOCAL (en ${region}):** "Aquí en ${region}", "En nuestra región"
-  • **EXTERNA (otra región):** "Desde [región]", "En [región]"
-  • **INTERNACIONAL:** "A nivel internacional", "En el extranjero"
-
-- **ESTILO RADIAL CHILENO:**
-  • Conversacional, como hablando con un vecino
-  • Conectores naturales: "y", "pero", "además", "mientras tanto"
-  • Cierre con frase relevante para el oyente chileno
-
-📰 **INFORMACIÓN BASE:**
-"${cleanedText}"
-
-${transitionPhrase ? `👉 **ARRANCA CON:** "${transitionPhrase}"` : ''}
-
-→ **PASO 1:** Determina LOCAL/EXTERNA/INTERNACIONAL.
-→ **PASO 2:** Locuta optimizado para TTS.
-→ **PASO 3:** Ajusta lenguaje según tipo de noticia.
-→ Solo el guion final.`
-
-    try {
-        const response = await fetch(CHUTES_CONFIG.endpoints.chatCompletions, {
-            method: 'POST',
-            headers: getChutesHeaders(),
-            body: JSON.stringify({
-                model: CHUTES_CONFIG.model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userPrompt }
-                ],
-                max_tokens: Math.max(500, targetWords * 4),
-                temperature: 0.5
-            })
-        })
-
-        if (!response.ok) {
-            console.warn(`⚠️ Chutes AI error: ${response.status}`)
-            return { content: cleanedText.substring(0, 500), success: false }
-        }
-
-        const data = await response.json()
-        let content = data.choices?.[0]?.message?.content?.trim()
-
-        if (!content) {
-            return { content: cleanedText.substring(0, 500), success: false }
-        }
-
-        const wordCount = content.split(/\s+/).length
-
-        // Si excede el objetivo por más del 20%, usar prompt de reducción
-        if (wordCount > targetWords * 1.2) {
-            console.log(`   ⚠️ Exceso: ${wordCount}/${targetWords} palabras, solicitando reducción...`)
-
-            const reducePrompt = `El siguiente texto tiene ${wordCount} palabras pero necesito máximo ${targetWords}.
-Redúcelo manteniendo los hechos esenciales, sin inventar nada.
-Solo devuelve el texto reducido:
-
-"${content}"`
-
-            const reduceResponse = await fetch(CHUTES_CONFIG.endpoints.chatCompletions, {
-                method: 'POST',
-                headers: getChutesHeaders(),
-                body: JSON.stringify({
-                    model: CHUTES_CONFIG.model,
-                    messages: [{ role: 'user', content: reducePrompt }],
-                    max_tokens: targetWords * 3,
-                    temperature: 0.3
-                })
-            })
-
-            if (reduceResponse.ok) {
-                const reduceData = await reduceResponse.json()
-                const reducedContent = reduceData.choices?.[0]?.message?.content?.trim()
-                if (reducedContent) {
-                    content = reducedContent
-                    console.log(`   ✅ Reducido: ${reducedContent.split(/\s+/).length} palabras`)
-                }
-            }
-        }
-
-        // ANTI-REPETICIÓN: Detectar y corregir repeticiones
-        const repetitionAnalysis = detectRepetitions(content)
-
-        if (!repetitionAnalysis.isValid) {
-            console.log(`   ⚠️ Repeticiones detectadas (score: ${repetitionAnalysis.score})`)
-
-            // Intentar corregir con prompt correctivo
-            const correctivePrompt = buildCorrectivePrompt(repetitionAnalysis.issues, content, targetWords)
-
-            const retryResponse = await fetch(CHUTES_CONFIG.endpoints.chatCompletions, {
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            const response = await fetch(CHUTES_CONFIG.endpoints.chatCompletions, {
                 method: 'POST',
                 headers: getChutesHeaders(),
                 body: JSON.stringify({
                     model: CHUTES_CONFIG.model,
                     messages: [
-                        { role: 'system', content: 'Eres un editor de radio chilena. Corrige textos con repeticiones para TTS.' },
-                        { role: 'user', content: correctivePrompt }
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
                     ],
-                    max_tokens: Math.max(600, targetWords * 4),
-                    temperature: 0.7
+                    max_tokens: Math.max(500, targetWords * 4),
+                    temperature: 0.5
                 })
             })
 
-            if (retryResponse.ok) {
-                const retryData = await retryResponse.json()
-                const correctedContent = retryData.choices?.[0]?.message?.content?.trim()
+            if (response.status === 429) {
+                if (attempt < MAX_RETRIES) {
+                    const delay = BASE_DELAY * Math.pow(2, attempt) // 2s, 4s, 8s
+                    console.log(`   🔄 Rate limit (429), reintentando en ${delay / 1000}s... (${attempt + 1}/${MAX_RETRIES})`)
+                    await new Promise(resolve => setTimeout(resolve, delay))
+                    continue
+                }
+                console.warn(`⚠️ Chutes AI error: 429 después de ${MAX_RETRIES} reintentos`)
+                return { content: cleanedText.substring(0, 500), success: false }
+            }
 
-                if (correctedContent) {
-                    const retryAnalysis = detectRepetitions(correctedContent)
+            if (!response.ok) {
+                console.warn(`⚠️ Chutes AI error: ${response.status}`)
+                return { content: cleanedText.substring(0, 500), success: false }
+            }
 
-                    if (retryAnalysis.score > repetitionAnalysis.score) {
-                        console.log(`   ✅ Corrección anti-repetición: score ${repetitionAnalysis.score} → ${retryAnalysis.score}`)
-                        content = correctedContent
+            const data = await response.json()
+            let content = data.choices?.[0]?.message?.content?.trim()
+
+            if (!content) {
+                return { content: cleanedText.substring(0, 500), success: false }
+            }
+
+            const wordCount = content.split(/\s+/).length
+
+            // Si excede el objetivo por más del 20%, usar prompt de reducción
+            if (wordCount > targetWords * 1.2) {
+                console.log(`   ⚠️ Exceso: ${wordCount}/${targetWords} palabras, solicitando reducción...`)
+
+                // Usar prompt centralizado - extraer tema del primer párrafo
+                const reductionTopic = content.split(/[.!?]/)[0]?.substring(0, 100) || 'noticia'
+                const reducePrompt = getReductionPrompt({ wordCount, targetWords, content, reductionTopic })
+
+                const reduceResponse = await fetch(CHUTES_CONFIG.endpoints.chatCompletions, {
+                    method: 'POST',
+                    headers: getChutesHeaders(),
+                    body: JSON.stringify({
+                        model: CHUTES_CONFIG.model,
+                        messages: [{ role: 'user', content: reducePrompt }],
+                        max_tokens: targetWords * 3,
+                        temperature: 0.3
+                    })
+                })
+
+                if (reduceResponse.ok) {
+                    const reduceData = await reduceResponse.json()
+                    const reducedContent = reduceData.choices?.[0]?.message?.content?.trim()
+                    if (reducedContent) {
+                        content = reducedContent
+                        console.log(`   ✅ Reducido: ${reducedContent.split(/\s+/).length} palabras`)
                     }
                 }
             }
-        }
 
-        console.log(`   ✅ Humanizado: ${content.split(/\s+/).length} palabras`)
-        return { content, success: true }
-    } catch (error) {
-        console.error('❌ Error humanizing:', error)
-        return { content: cleanedText.substring(0, 500), success: false }
+            // ANTI-REPETICIÓN: Detectar y corregir repeticiones
+            const repetitionAnalysis = detectRepetitions(content)
+
+            if (!repetitionAnalysis.isValid) {
+                console.log(`   ⚠️ Repeticiones detectadas (score: ${repetitionAnalysis.score})`)
+
+                // Intentar corregir con prompt correctivo
+                const correctivePrompt = buildCorrectivePrompt(repetitionAnalysis.issues, content, targetWords)
+
+                const retryResponse = await fetch(CHUTES_CONFIG.endpoints.chatCompletions, {
+                    method: 'POST',
+                    headers: getChutesHeaders(),
+                    body: JSON.stringify({
+                        model: CHUTES_CONFIG.model,
+                        messages: [
+                            { role: 'system', content: ANTI_REPETITION_SYSTEM },
+                            { role: 'user', content: correctivePrompt }
+                        ],
+                        max_tokens: Math.max(600, targetWords * 4),
+                        temperature: 0.7
+                    })
+                })
+
+                if (retryResponse.ok) {
+                    const retryData = await retryResponse.json()
+                    const correctedContent = retryData.choices?.[0]?.message?.content?.trim()
+
+                    if (correctedContent) {
+                        const retryAnalysis = detectRepetitions(correctedContent)
+
+                        if (retryAnalysis.score > repetitionAnalysis.score) {
+                            console.log(`   ✅ Corrección anti-repetición: score ${repetitionAnalysis.score} → ${retryAnalysis.score}`)
+                            content = correctedContent
+                        }
+                    }
+                }
+            }
+
+            console.log(`   ✅ Humanizado: ${content.split(/\s+/).length} palabras`)
+            return { content, success: true }
+        } catch (error) {
+            console.error('❌ Error humanizing:', error)
+            return { content: cleanedText.substring(0, 500), success: false }
+        }
     }
+
+    // Fallback si el loop termina sin retornar (no debería pasar)
+    return { content: text.substring(0, 500), success: false }
 }
 
 // ============================================================
@@ -877,59 +830,105 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
         currentDuration += TIMING_CONSTANTS.INTRO_DURATION
 
         // ============================================================
-        // 5. HUMANIZAR NOTICIAS (BATCHES)
+        // 5. HUMANIZAR NOTICIAS (PARALELO EN BATCHES DE 3)
         // ============================================================
         const totalNoticias = noticiasOrdenadas.length
-        console.log(`⚡ === PROCESAMIENTO EN BATCHES ===`)
-        console.log(`   📦 Batch size: ${BATCH_SIZE} | Delay: ${BATCH_DELAY}ms`)
+        const PARALLEL_BATCH_SIZE = 2  // Procesar 2 noticias a la vez (evita 429)
+        console.log(`⚡ === PROCESAMIENTO PARALELO ===`)
+        console.log(`   📦 Batch size: ${PARALLEL_BATCH_SIZE} (paralelo) | Total: ${totalNoticias}`)
 
-        for (let i = 0; i < totalNoticias; i++) {
-            const noticia = noticiasOrdenadas[i]
-            const progress = 20 + Math.round((i / totalNoticias) * 60)
+        // Preparar todas las noticias con su contexto
+        const noticiasConContexto = noticiasOrdenadas.map((noticia, i) => ({
+            noticia,
+            index: i,
+            previousCategory: i > 0 ? noticiasOrdenadas[i - 1].categoria : null
+        }))
 
+        // Procesar en batches paralelos
+        const humanizedResults: any[] = new Array(totalNoticias)
+
+        for (let batchStart = 0; batchStart < totalNoticias; batchStart += PARALLEL_BATCH_SIZE) {
+            const batchEnd = Math.min(batchStart + PARALLEL_BATCH_SIZE, totalNoticias)
+            const batch = noticiasConContexto.slice(batchStart, batchEnd)
+
+            const progress = 20 + Math.round((batchStart / totalNoticias) * 60)
             await updateJobStatus(
                 jobId,
                 'processing',
                 progress,
-                `Humanizando noticia ${i + 1}/${totalNoticias}...`
+                `Humanizando noticias ${batchStart + 1}-${batchEnd}/${totalNoticias}...`
             )
 
-            console.log(`🧠 [${i + 1}] ${noticia.titulo?.substring(0, 50)}...`)
+            console.log(`⚡ Batch ${Math.floor(batchStart / PARALLEL_BATCH_SIZE) + 1}: noticias ${batchStart + 1}-${batchEnd}`)
 
-            const previousCategory = i > 0 ? noticiasOrdenadas[i - 1].categoria : null
-            const transitionPhrase = getTransitionPhrase(i, noticia.categoria || 'general', previousCategory)
+            // Procesar batch con delay escalonado para evitar rate limiting
+            const batchPromises = batch.map(async ({ noticia, index, previousCategory }, batchIndex) => {
+                // Delay escalonado: 0ms, 800ms para evitar 429
+                if (batchIndex > 0) {
+                    await new Promise(resolve => setTimeout(resolve, batchIndex * 1500))
+                }
 
-            const sourceText = noticia.contenido || noticia.resumen || noticia.titulo
-            const targetWords = noticia.palabras_objetivo || 120
+                const transitionPhrase = getTransitionPhrase(index, noticia.categoria || 'general', previousCategory)
+                const sourceText = noticia.contenido || noticia.resumen || noticia.titulo
+                const targetWords = noticia.palabras_objetivo || 120
 
-            const { content: humanizedContent, success } = await humanizeText(
-                sourceText,
-                region,
-                targetWords,
-                transitionPhrase
-            )
+                const { content: humanizedContent, success } = await humanizeText(
+                    sourceText,
+                    region,
+                    targetWords,
+                    transitionPhrase
+                )
 
-            const wordCount = humanizedContent.split(/\s+/).length
-            const duration = Math.ceil((wordCount / effectiveWPM) * 60)
+                const wordCount = humanizedContent.split(/\s+/).length
+                const duration = Math.ceil((wordCount / effectiveWPM) * 60)
 
-            console.log(`   📊 [${i + 1}] Palabras: ${wordCount} | Duración: ${duration}s | Acum: ${currentDuration + duration}s`)
+                console.log(`   📊 [${index + 1}] ${noticia.titulo?.substring(0, 30)}... → ${wordCount} palabras, ${duration}s`)
 
-            timeline.push({
-                id: noticia.id,
-                type: 'news',
-                title: noticia.titulo,
-                content: humanizedContent,
-                originalContent: sourceText,
-                duration: duration,
-                isHumanized: success,
-                voiceId: voiceModel || 'default',
-                category: noticia.categoria,
-                url: noticia.url,
-                source: noticia.fuente,
-                newsId: noticia.id
+                return {
+                    index,
+                    noticia,
+                    humanizedContent,
+                    success,
+                    wordCount,
+                    duration,
+                    sourceText
+                }
             })
 
-            currentDuration += duration
+            const batchResults = await Promise.all(batchPromises)
+
+            // Guardar resultados en orden
+            for (const result of batchResults) {
+                humanizedResults[result.index] = result
+            }
+
+            // Delay entre batches para evitar rate limiting (solo si hay más)
+            if (batchEnd < totalNoticias) {
+                await new Promise(resolve => setTimeout(resolve, 3000))
+            }
+        }
+
+        // Construir timeline en orden correcto
+        for (let i = 0; i < humanizedResults.length; i++) {
+            const result = humanizedResults[i]
+            if (!result) continue
+
+            timeline.push({
+                id: result.noticia.id,
+                type: 'news',
+                title: result.noticia.titulo,
+                content: result.humanizedContent,
+                originalContent: result.sourceText,
+                duration: result.duration,
+                isHumanized: result.success,
+                voiceId: voiceModel || 'default',
+                category: result.noticia.categoria,
+                url: result.noticia.url,
+                source: result.noticia.fuente,
+                newsId: result.noticia.id
+            })
+
+            currentDuration += result.duration
 
             // Insertar publicidades según plan
             const insercionesAqui = plan.inserciones.filter(ins =>
@@ -956,11 +955,6 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
                     adIndex++
                 }
             }
-
-            // Delay entre noticias para evitar rate limiting
-            if (i < totalNoticias - 1) {
-                await new Promise(resolve => setTimeout(resolve, 1500))
-            }
         }
 
         // ============================================================
@@ -983,21 +977,29 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
 
             // SIEMPRE intentar extender noticias primero (sin límite de tiempo)
             if (noticiasAjustables.length > 0) {
-                // Determinar cuántas noticias extender basado en el tiempo faltante
-                // Más tiempo faltante = más noticias a extender
-                const noticiasAExtender = tiempoFaltante > 60
-                    ? Math.min(5, noticiasAjustables.length)  // Si falta mucho, extender hasta 5
-                    : Math.min(3, noticiasAjustables.length)  // Si falta poco, extender hasta 3
+                // OPTIMIZACIÓN: Máximo 3 noticias, en paralelo
+                const noticiasAExtender = Math.min(3, noticiasAjustables.length)
 
                 const tiempoPorNoticia = Math.ceil(tiempoFaltante / noticiasAExtender)
                 const palabrasPorNoticia = Math.round((tiempoPorNoticia / 60) * effectiveWPM)
 
-                console.log(`   📊 Distribuyendo ${Math.round(tiempoFaltante)}s entre ${noticiasAExtender} noticias (+${palabrasPorNoticia} palabras c/u)`)
+                console.log(`   📊 Distribuyendo ${Math.round(tiempoFaltante)}s entre ${noticiasAExtender} noticias (+${palabrasPorNoticia} palabras c/u) [PARALELO]`)
 
+                // Preparar noticias a extender
+                const noticiasParaExtender = []
                 for (let i = 0; i < noticiasAExtender; i++) {
                     const noticiaAjustar = noticiasAjustables[noticiasAjustables.length - 1 - i]
                     const palabrasActuales = noticiaAjustar.content.split(/\s+/).length
                     const palabrasObjetivo = palabrasActuales + palabrasPorNoticia
+                    noticiasParaExtender.push({ noticiaAjustar, palabrasObjetivo })
+                }
+
+                // Procesar en paralelo con delay escalonado
+                const extensionPromises = noticiasParaExtender.map(async ({ noticiaAjustar, palabrasObjetivo }, idx) => {
+                    // Delay escalonado para evitar 429
+                    if (idx > 0) {
+                        await new Promise(resolve => setTimeout(resolve, idx * 1500))
+                    }
 
                     console.log(`   📝 Re-humanizando "${noticiaAjustar.title?.substring(0, 35)}..."`)
 
@@ -1007,6 +1009,13 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
                         palabrasObjetivo
                     )
 
+                    return { noticiaAjustar, nuevoContenido, success }
+                })
+
+                const extensionResults = await Promise.all(extensionPromises)
+
+                // Aplicar resultados
+                for (const { noticiaAjustar, nuevoContenido, success } of extensionResults) {
                     if (success && nuevoContenido) {
                         const nuevaPalabras = nuevoContenido.split(/\s+/).length
                         const nuevaDuracion = Math.ceil((nuevaPalabras / effectiveWPM) * 60)
@@ -1042,10 +1051,13 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
 
             const resumenNoticias = noticiasCubiertas.join('; ')
 
-            const cierrePrompt = `Genera un cierre de noticiero de ${palabrasCierre} palabras para ${displayName}.
-Resume brevemente: ${resumenNoticias}
-Usa tono profesional de radio chilena. Incluye despedida final.
-NO uses corchetes ni placeholders. Texto listo para leer.`
+            // Usar prompt centralizado
+            const cierrePrompt = getCierrePrompt({
+                palabrasCierre,
+                displayName: radioName || region,
+                resumenNoticias,
+                region
+            })
 
             let cierreExtendido = ''
             try {
