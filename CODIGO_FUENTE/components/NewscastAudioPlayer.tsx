@@ -41,8 +41,22 @@ export function NewscastAudioPlayer({ timeline, newscastName = 'noticiero' }: Ne
     const [downloadProgress, setDownloadProgress] = useState<ConcatenationProgress | null>(null)
     const audioRef = useRef<HTMLAudioElement | null>(null)
 
-    // Filter items that have audio
-    const audioItems = timeline.filter(item => item.audioUrl)
+    // Helper para obtener URL proxied para Google Drive
+    const getProxiedUrl = (url: string | undefined): string | undefined => {
+        if (!url) return undefined
+        if (url.startsWith('https://drive.google.com/')) {
+            return `/api/audio-proxy?url=${encodeURIComponent(url)}`
+        }
+        return url
+    }
+
+    // Filter items that have audio and add proxied URLs
+    const audioItems = timeline
+        .filter(item => item.audioUrl)
+        .map(item => ({
+            ...item,
+            audioUrl: getProxiedUrl(item.audioUrl)
+        }))
     const currentItem = audioItems[currentIndex]
 
     // Calculate total duration

@@ -21,7 +21,8 @@ import {
   Mail,
   Crown,
   Shield,
-  Badge
+  Badge,
+  BookOpen
 } from 'lucide-react'
 import { useSupabaseUser } from '@/hooks/use-supabase-user'
 
@@ -69,13 +70,12 @@ const allNavigationItems = [
     icon: FolderOpen,
     roles: ['super_admin', 'admin', 'user'],
   },
-  // Bibliotecas oculta temporalmente
-  // {
-  //   name: 'Bibliotecas',
-  //   href: '/bibliotecas',
-  //   icon: BookOpen,
-  //   roles: ['super_admin', 'admin', 'user'],
-  // },
+  {
+    name: 'Bibliotecas',
+    href: '/bibliotecas',
+    icon: BookOpen,
+    roles: ['super_admin', 'admin'],
+  },
   {
     name: 'Mis Usuarios',
     href: '/admin/usuarios',

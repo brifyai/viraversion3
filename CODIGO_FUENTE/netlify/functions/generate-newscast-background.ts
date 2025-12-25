@@ -699,6 +699,7 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
             userId,
             includeWeather = true,
             timeStrategy = 'auto',
+            selectedAdIds = [],  // ✅ NUEVO: IDs de publicidades seleccionadas por el usuario
             voiceSettings = {
                 speed: 13,  // Default +13% como en finalize-newscast
                 pitch: 0,
@@ -762,11 +763,32 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
             .select('*')
             .eq('user_id', userId)
             .eq('esta_activo', true)
-            .gte('fecha_fin', new Date().toISOString())
-            .lte('fecha_inicio', new Date().toISOString())
 
-        const campaigns = campaignsRaw || []
-        console.log(`📢 ${campaigns.length} campañas publicitarias activas`)
+        // Filtrar manualmente por fechas (comparando solo la fecha, no la hora)
+        const today = new Date().toISOString().split('T')[0] // "2025-12-25"
+        const allCampaigns = (campaignsRaw || []).filter((c: any) => {
+            const inicio = c.fecha_inicio?.split('T')[0] || c.fecha_inicio
+            const fin = c.fecha_fin?.split('T')[0] || c.fecha_fin
+            return inicio <= today && fin >= today
+        })
+
+        // ✅ Solo usar campañas con audio de Google Drive (URLs https://)
+        // Excluir campañas con archivos locales (/audio/...) ya que no funcionarán
+        const driveCampaigns = allCampaigns.filter((c: any) =>
+            !c.url_audio || c.url_audio.startsWith('https://')
+        )
+
+        let campaigns = driveCampaigns
+        if (selectedAdIds && selectedAdIds.length > 0) {
+            campaigns = driveCampaigns.filter((c: any) => selectedAdIds.includes(c.id))
+            console.log(`📢 ${campaigns.length} campañas seleccionadas por usuario (de ${driveCampaigns.length} con Drive)`)
+        } else {
+            console.log(`📢 ${campaigns.length} campañas publicitarias activas con Drive (de ${allCampaigns.length} total)`)
+        }
+
+        // Calcular duración total real de publicidades
+        const totalAdDurationReal = campaigns.reduce((sum: number, c: any) => sum + (c.duracion_segundos || 25), 0)
+        console.log(`   ⏱️ Duración total de publicidades: ${totalAdDurationReal}s (${Math.round(totalAdDurationReal / 60 * 10) / 10} min)`)
 
         // ============================================================
         // 3. IA DIRECTORA - PLANIFICAR NOTICIERO
@@ -830,12 +852,16 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
         currentDuration += TIMING_CONSTANTS.INTRO_DURATION
 
         // ============================================================
-        // 5. HUMANIZAR NOTICIAS (PARALELO EN BATCHES DE 3)
+        // 5. HUMANIZAR NOTICIAS (SECUENCIAL para evitar 429)
+        // ============================================================
+        // NOTA: Cambiado de paralelo a secuencial (2024-12-25)
+        // El procesamiento paralelo causaba errores 429 constantes en Chutes AI.
+        // El procesamiento secuencial es más lento pero 100% estable.
         // ============================================================
         const totalNoticias = noticiasOrdenadas.length
-        const PARALLEL_BATCH_SIZE = 2  // Procesar 2 noticias a la vez (evita 429)
-        console.log(`⚡ === PROCESAMIENTO PARALELO ===`)
-        console.log(`   📦 Batch size: ${PARALLEL_BATCH_SIZE} (paralelo) | Total: ${totalNoticias}`)
+        const REQUEST_DELAY_MS = 3000  // 3 segundos entre cada llamada a IA
+        console.log(`🐢 === PROCESAMIENTO SECUENCIAL (anti-429) ===`)
+        console.log(`   ⏱️ Delay entre requests: ${REQUEST_DELAY_MS}ms | Total: ${totalNoticias} noticias`)
 
         // Preparar todas las noticias con su contexto
         const noticiasConContexto = noticiasOrdenadas.map((noticia, i) => ({
@@ -844,67 +870,54 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
             previousCategory: i > 0 ? noticiasOrdenadas[i - 1].categoria : null
         }))
 
-        // Procesar en batches paralelos
+        // Procesar UNA noticia a la vez (sin paralelismo)
         const humanizedResults: any[] = new Array(totalNoticias)
 
-        for (let batchStart = 0; batchStart < totalNoticias; batchStart += PARALLEL_BATCH_SIZE) {
-            const batchEnd = Math.min(batchStart + PARALLEL_BATCH_SIZE, totalNoticias)
-            const batch = noticiasConContexto.slice(batchStart, batchEnd)
+        for (let i = 0; i < totalNoticias; i++) {
+            const { noticia, index, previousCategory } = noticiasConContexto[i]
 
-            const progress = 20 + Math.round((batchStart / totalNoticias) * 60)
+            // Actualizar progreso
+            const progress = 20 + Math.round((i / totalNoticias) * 60)
             await updateJobStatus(
                 jobId,
                 'processing',
                 progress,
-                `Humanizando noticias ${batchStart + 1}-${batchEnd}/${totalNoticias}...`
+                `Humanizando noticia ${i + 1}/${totalNoticias}...`
             )
 
-            console.log(`⚡ Batch ${Math.floor(batchStart / PARALLEL_BATCH_SIZE) + 1}: noticias ${batchStart + 1}-${batchEnd}`)
+            console.log(`🐢 [${i + 1}/${totalNoticias}] Procesando: ${noticia.titulo?.substring(0, 40)}...`)
 
-            // Procesar batch con delay escalonado para evitar rate limiting
-            const batchPromises = batch.map(async ({ noticia, index, previousCategory }, batchIndex) => {
-                // Delay escalonado: 0ms, 800ms para evitar 429
-                if (batchIndex > 0) {
-                    await new Promise(resolve => setTimeout(resolve, batchIndex * 1500))
-                }
+            const transitionPhrase = getTransitionPhrase(index, noticia.categoria || 'general', previousCategory)
+            const sourceText = noticia.contenido || noticia.resumen || noticia.titulo
+            const targetWords = noticia.palabras_objetivo || 120
 
-                const transitionPhrase = getTransitionPhrase(index, noticia.categoria || 'general', previousCategory)
-                const sourceText = noticia.contenido || noticia.resumen || noticia.titulo
-                const targetWords = noticia.palabras_objetivo || 120
+            const { content: humanizedContent, success } = await humanizeText(
+                sourceText,
+                region,
+                targetWords,
+                transitionPhrase
+            )
 
-                const { content: humanizedContent, success } = await humanizeText(
-                    sourceText,
-                    region,
-                    targetWords,
-                    transitionPhrase
-                )
+            const wordCount = humanizedContent.split(/\s+/).length
+            const duration = Math.ceil((wordCount / effectiveWPM) * 60)
 
-                const wordCount = humanizedContent.split(/\s+/).length
-                const duration = Math.ceil((wordCount / effectiveWPM) * 60)
+            console.log(`   ✅ ${wordCount} palabras, ${duration}s`)
 
-                console.log(`   📊 [${index + 1}] ${noticia.titulo?.substring(0, 30)}... → ${wordCount} palabras, ${duration}s`)
-
-                return {
-                    index,
-                    noticia,
-                    humanizedContent,
-                    success,
-                    wordCount,
-                    duration,
-                    sourceText
-                }
-            })
-
-            const batchResults = await Promise.all(batchPromises)
-
-            // Guardar resultados en orden
-            for (const result of batchResults) {
-                humanizedResults[result.index] = result
+            humanizedResults[index] = {
+                index,
+                noticia,
+                humanizedContent,
+                success,
+                wordCount,
+                duration,
+                sourceText
             }
 
-            // Delay entre batches para evitar rate limiting (solo si hay más)
-            if (batchEnd < totalNoticias) {
-                await new Promise(resolve => setTimeout(resolve, 3000))
+            // Delay entre cada request para evitar rate limiting
+            // Solo si hay más noticias por procesar
+            if (i < totalNoticias - 1) {
+                console.log(`   ⏳ Esperando ${REQUEST_DELAY_MS}ms antes de la siguiente...`)
+                await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY_MS))
             }
         }
 
@@ -977,31 +990,21 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
 
             // SIEMPRE intentar extender noticias primero (sin límite de tiempo)
             if (noticiasAjustables.length > 0) {
-                // OPTIMIZACIÓN: Máximo 3 noticias, en paralelo
+                // Máximo 3 noticias, SECUENCIAL (antes paralelo)
                 const noticiasAExtender = Math.min(3, noticiasAjustables.length)
 
                 const tiempoPorNoticia = Math.ceil(tiempoFaltante / noticiasAExtender)
                 const palabrasPorNoticia = Math.round((tiempoPorNoticia / 60) * effectiveWPM)
 
-                console.log(`   📊 Distribuyendo ${Math.round(tiempoFaltante)}s entre ${noticiasAExtender} noticias (+${palabrasPorNoticia} palabras c/u) [PARALELO]`)
+                console.log(`   📊 Distribuyendo ${Math.round(tiempoFaltante)}s entre ${noticiasAExtender} noticias (+${palabrasPorNoticia} palabras c/u) [SECUENCIAL]`)
 
-                // Preparar noticias a extender
-                const noticiasParaExtender = []
+                // Procesar SECUENCIALMENTE (antes en paralelo) para evitar 429
                 for (let i = 0; i < noticiasAExtender; i++) {
                     const noticiaAjustar = noticiasAjustables[noticiasAjustables.length - 1 - i]
                     const palabrasActuales = noticiaAjustar.content.split(/\s+/).length
                     const palabrasObjetivo = palabrasActuales + palabrasPorNoticia
-                    noticiasParaExtender.push({ noticiaAjustar, palabrasObjetivo })
-                }
 
-                // Procesar en paralelo con delay escalonado
-                const extensionPromises = noticiasParaExtender.map(async ({ noticiaAjustar, palabrasObjetivo }, idx) => {
-                    // Delay escalonado para evitar 429
-                    if (idx > 0) {
-                        await new Promise(resolve => setTimeout(resolve, idx * 1500))
-                    }
-
-                    console.log(`   📝 Re-humanizando "${noticiaAjustar.title?.substring(0, 35)}..."`)
+                    console.log(`   📝 [${i + 1}/${noticiasAExtender}] Re-humanizando "${noticiaAjustar.title?.substring(0, 35)}..."`)
 
                     const { content: nuevoContenido, success } = await humanizeText(
                         noticiaAjustar.originalContent,
@@ -1009,13 +1012,6 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
                         palabrasObjetivo
                     )
 
-                    return { noticiaAjustar, nuevoContenido, success }
-                })
-
-                const extensionResults = await Promise.all(extensionPromises)
-
-                // Aplicar resultados
-                for (const { noticiaAjustar, nuevoContenido, success } of extensionResults) {
                     if (success && nuevoContenido) {
                         const nuevaPalabras = nuevoContenido.split(/\s+/).length
                         const nuevaDuracion = Math.ceil((nuevaPalabras / effectiveWPM) * 60)
@@ -1026,6 +1022,12 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
                         currentDuration = currentDuration - duracionAnterior + nuevaDuracion
 
                         console.log(`      ✅ ${duracionAnterior}s → ${nuevaDuracion}s (+${nuevaDuracion - duracionAnterior}s)`)
+                    }
+
+                    // Delay entre cada extensión para evitar 429
+                    if (i < noticiasAExtender - 1) {
+                        console.log(`      ⏳ Esperando 3s antes de la siguiente extensión...`)
+                        await new Promise(resolve => setTimeout(resolve, 3000))
                     }
                 }
 
@@ -1219,6 +1221,12 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
                 const tiempoNuevo = timeline.reduce((sum, item) => sum + (item.duration || 0), 0)
                 const nuevaDiferencia = tiempoNuevo - targetDuration
                 console.log(`   📊 Tiempo actual: ${tiempoNuevo}s (${nuevaDiferencia >= 0 ? '+' : ''}${nuevaDiferencia}s del objetivo)`)
+            }
+
+            // Delay entre intentos de verificación para evitar 429
+            if (intento < MAX_INTENTOS - 1) {
+                console.log(`   ⏳ Esperando 3s antes del siguiente intento de ajuste...`)
+                await new Promise(resolve => setTimeout(resolve, 3000))
             }
         }
 

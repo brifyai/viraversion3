@@ -27,6 +27,12 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: error.message }, { status: 500 })
         }
 
+        // Debug: mostrar URLs de campañas
+        console.log(`📢 Campañas encontradas: ${campaigns?.length || 0}`)
+        campaigns?.forEach((c: any) => {
+            console.log(`  - "${c.nombre}" | url_audio: ${c.url_audio?.substring(0, 50) || 'NULL'}... | activo: ${c.esta_activo}`)
+        })
+
         return NextResponse.json(campaigns)
     } catch (error: any) {
         console.error('Error in GET /api/campaigns:', error)

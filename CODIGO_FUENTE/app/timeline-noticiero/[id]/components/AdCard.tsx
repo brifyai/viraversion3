@@ -42,14 +42,20 @@ export function AdCard({ ad, index, onDelete }: AdCardProps) {
                     )}
                 </div>
 
-                {ad.audioUrl ? (
-                    <div className="flex items-center gap-2 mb-2">
-                        <Volume2 className="h-4 w-4 text-amber-600" />
-                        <audio controls className="h-8 flex-1" preload="metadata">
-                            <source src={ad.audioUrl} type="audio/mpeg" />
-                        </audio>
-                    </div>
-                ) : (
+                {ad.audioUrl ? (() => {
+                    // Usar proxy para URLs de Google Drive
+                    const audioSrc = ad.audioUrl.startsWith('https://drive.google.com/')
+                        ? `/api/audio-proxy?url=${encodeURIComponent(ad.audioUrl)}`
+                        : ad.audioUrl
+                    return (
+                        <div className="flex items-center gap-2 mb-2">
+                            <Volume2 className="h-4 w-4 text-amber-600" />
+                            <audio controls className="h-8 flex-1" preload="metadata">
+                                <source src={audioSrc} type="audio/mpeg" />
+                            </audio>
+                        </div>
+                    )
+                })() : (
                     <p className="text-sm text-gray-600 line-clamp-2 mb-2 italic">
                         {ad.content}
                     </p>

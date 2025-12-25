@@ -15,6 +15,7 @@ import { DurationSlider } from '@/components/newscast/DurationSlider'
 import { GenerateButton } from '@/components/newscast/GenerateButton'
 import { VoiceSelector } from '@/components/newscast/VoiceSelector'
 import { VoiceConfig, defaultVoiceConfig, type VoiceConfigSettings } from '@/components/newscast/VoiceConfig'
+import { AdSelector } from '@/components/newscast/AdSelector'
 import { useNewscastGeneration } from '@/hooks/useNewscastGeneration'
 import { useSupabaseUser } from '@/hooks/use-supabase-user'  // ✅ Para obtener userId
 import { Save, Settings, Music, Clock, Search, Loader2, Newspaper, CheckCircle } from 'lucide-react'
@@ -76,6 +77,8 @@ export default function CrearNoticiero() {
   const [loadingStats, setLoadingStats] = useState(false)
   const [duration, setDuration] = useState(15)
   const [adCount, setAdCount] = useState(3)
+  const [selectedAdIds, setSelectedAdIds] = useState<string[]>([])  // IDs de publicidades seleccionadas
+  const [totalAdDuration, setTotalAdDuration] = useState(0)  // ✅ NUEVO: Duración total real de ads en segundos
   const [generateAudio, setGenerateAudio] = useState(false)  // Toggle para generar audio en finalize
   const [selectedVoice, setSelectedVoice] = useState('es-mx')
   const [voiceWPM, setVoiceWPM] = useState(175)  // WPM de la voz seleccionada
@@ -702,6 +705,8 @@ export default function CrearNoticiero() {
       targetDuration: duration * 60,
       // generateAudioNow ya no se usa - audio siempre se genera
       adCount: adCount,
+      selectedAdIds: selectedAdIds,  // ✅ NUEVO: IDs de publicidades seleccionadas
+      totalAdDuration: totalAdDuration,  // ✅ NUEVO: Duración real en segundos
       includeTimeWeather: includeWeather,
       timeStrategy: timeStrategy,
       hora_generacion: timeStrategy === 'scheduled' ? scheduledTime : undefined,  // ✅ NUEVO: Hora programada
@@ -1066,39 +1071,14 @@ export default function CrearNoticiero() {
             </Card>
 
             {/* 5. Configuración de Publicidad */}
-            <Card>
-              <CardHeader>
-                <CardTitle>5. Configuración de Publicidad</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <label className="text-sm font-medium text-gray-700">
-                      Cantidad de Anuncios a Insertar
-                    </label>
-                    <span className="text-2xl font-bold text-blue-600">
-                      {adCount}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={10}
-                    step={1}
-                    value={adCount}
-                    onChange={(e) => setAdCount(Number(e.target.value))}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                  />
-                  <div className="flex justify-between text-xs text-gray-500">
-                    <span>0 anuncios</span>
-                    <span>10 anuncios</span>
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    Se distribuirán equitativamente durante el noticiero.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            <AdSelector
+              adCount={adCount}
+              onAdCountChange={setAdCount}
+              selectedAdIds={selectedAdIds}
+              onSelectedAdsChange={setSelectedAdIds}
+              onTotalDurationChange={setTotalAdDuration}
+              maxAds={5}
+            />
 
             {/* 4. Opciones Avanzadas */}
             <Card>

@@ -26,8 +26,37 @@ export function CreateCampaignModal({ open, onOpenChange, onSuccess }: CreateCam
     const [description, setDescription] = useState('')
     const [type, setType] = useState<'audio' | 'text'>('audio')
     const [file, setFile] = useState<File | null>(null)
+    const [audioDuration, setAudioDuration] = useState<number | null>(null)
     const [startDate, setStartDate] = useState('')
     const [endDate, setEndDate] = useState('')
+
+    // Obtener duración real del archivo de audio
+    const getAudioDuration = (audioFile: File): Promise<number> => {
+        return new Promise((resolve) => {
+            const audio = new Audio()
+            audio.onloadedmetadata = () => {
+                resolve(Math.ceil(audio.duration))
+                URL.revokeObjectURL(audio.src)
+            }
+            audio.onerror = () => {
+                resolve(30) // fallback
+                URL.revokeObjectURL(audio.src)
+            }
+            audio.src = URL.createObjectURL(audioFile)
+        })
+    }
+
+    // Cuando se selecciona un archivo, calcular duración
+    const handleFileSelect = async (selectedFile: File | null) => {
+        setFile(selectedFile)
+        if (selectedFile) {
+            const duration = await getAudioDuration(selectedFile)
+            setAudioDuration(duration)
+            console.log(`📊 Duración del audio: ${duration}s`)
+        } else {
+            setAudioDuration(null)
+        }
+    }
 
     const handleSubmit = async () => {
         if (!name.trim()) {
@@ -50,32 +79,25 @@ export function CreateCampaignModal({ open, onOpenChange, onSuccess }: CreateCam
             return
         }
 
-        // Validación de fechas
-        const today = new Date()
-        today.setHours(0, 0, 0, 0) // Inicio del día
+        // Validación de fechas - comparar solo la parte de fecha (sin hora)
+        const todayStr = new Date().toISOString().split('T')[0] // "2025-12-25"
 
-        if (startDate) {
-            const startDateObj = new Date(startDate)
-            if (startDateObj < today) {
-                toast.error('La fecha de inicio no puede ser anterior a hoy')
-                return
-            }
+        if (startDate && startDate < todayStr) {
+            toast.error('La fecha de inicio no puede ser anterior a hoy')
+            return
         }
 
-        if (endDate && startDate) {
-            const startDateObj = new Date(startDate)
-            const endDateObj = new Date(endDate)
-            if (endDateObj <= startDateObj) {
-                toast.error('La fecha de fin debe ser posterior a la fecha de inicio')
-                return
-            }
+        if (endDate && startDate && endDate <= startDate) {
+            toast.error('La fecha de fin debe ser posterior a la fecha de inicio')
+            return
         }
 
         setLoading(true)
         try {
             let audioUrl = null
             let s3Key = null
-            let duration = 30 // Default duration
+            // Usar duración real del audio o fallback
+            let duration = audioDuration || 30
 
             // 1. Subir audio si aplica
             if (type === 'audio' && file) {
@@ -98,8 +120,8 @@ export function CreateCampaignModal({ open, onOpenChange, onSuccess }: CreateCam
                 audioUrl = uploadData.audioUrl
                 s3Key = uploadData.s3Key
 
-                // Si el backend devuelve duración, usarla (opcional, si se implementa)
-                // duration = uploadData.duration || 30 
+                // Usar duración real calculada del archivo
+                console.log(`✅ Usando duración real: ${duration}s`)
             } else {
                 // Estimación para texto: 150 palabras por minuto
                 const words = description.trim().split(/\s+/).length
@@ -136,6 +158,7 @@ export function CreateCampaignModal({ open, onOpenChange, onSuccess }: CreateCam
             setName('')
             setDescription('')
             setFile(null)
+            setAudioDuration(null)
             setType('audio')
 
         } catch (error: any) {
@@ -194,11 +217,16 @@ export function CreateCampaignModal({ open, onOpenChange, onSuccess }: CreateCam
                                     type="file"
                                     accept="audio/*"
                                     className="absolute inset-0 opacity-0 cursor-pointer"
-                                    onChange={e => setFile(e.target.files?.[0] || null)}
+                                    onChange={e => handleFileSelect(e.target.files?.[0] || null)}
                                 />
                                 <Upload className="h-8 w-8 text-gray-400 mb-2" />
                                 {file ? (
-                                    <span className="text-sm font-medium text-blue-600">{file.name}</span>
+                                    <div className="space-y-1">
+                                        <span className="text-sm font-medium text-blue-600">{file.name}</span>
+                                        {audioDuration && (
+                                            <p className="text-xs text-gray-500">Duración: {audioDuration}s</p>
+                                        )}
+                                    </div>
                                 ) : (
                                     <span className="text-sm text-gray-500">Haz clic o arrastra un archivo aquí</span>
                                 )}

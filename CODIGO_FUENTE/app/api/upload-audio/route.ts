@@ -1,15 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { writeFile, mkdir } from 'fs/promises'
-import { existsSync } from 'fs'
-import path from 'path'
-import { getSupabaseSession, supabaseAdmin } from '@/lib/supabase-server'
+import { supabaseAdmin } from '@/lib/supabase-server'
 import { getCurrentUser } from '@/lib/supabase-auth'
 import { getResourceOwnerId, canModifyResources } from '@/lib/resource-owner'
+import { getDriveRefreshToken } from '@/lib/get-drive-token'
+import { uploadFileToDrive } from '@/lib/google-drive'
 
 const supabase = supabaseAdmin
 
-// Directorio base para archivos de audio
-const AUDIO_BASE_DIR = path.join(process.cwd(), 'public', 'audio')
+// Mapear tipo a nombre de subcarpeta en Drive
+const tipoToFolder: Record<string, 'cortinas' | 'musica' | 'efectos' | 'jingles' | 'intros' | 'outros' | 'voces' | 'publicidad'> = {
+  'cortina': 'cortinas',
+  'musica': 'musica',
+  'efecto': 'efectos',
+  'jingle': 'jingles',
+  'intro': 'intros',
+  'outro': 'outros',
+  'voz': 'voces',
+  'publicidad': 'publicidad'  // Publicidad tiene su propia carpeta
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,11 +27,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 
-    // Solo ADMIN puede subir archivos, USER no puede (usa recursos del admin)
+    // Solo ADMIN puede subir archivos
     if (!canModifyResources(currentUser)) {
       return NextResponse.json({
         error: 'No tienes permisos para subir archivos. Contacta a tu administrador.'
       }, { status: 403 })
+    }
+
+    // ============================================================
+    // VERIFICAR QUE TIENE GOOGLE DRIVE VINCULADO
+    // ============================================================
+    const driveRefreshToken = await getDriveRefreshToken(currentUser.id)
+
+    if (!driveRefreshToken) {
+      return NextResponse.json({
+        error: 'Google Drive no vinculado',
+        message: 'Debes vincular tu cuenta de Google Drive antes de subir archivos. Ve a Integraciones para conectar tu cuenta.',
+        code: 'DRIVE_NOT_LINKED'
+      }, { status: 400 })
     }
 
     const formData = await request.formData()
@@ -31,10 +52,6 @@ export async function POST(request: NextRequest) {
     const nombre = (formData.get('nombre') as string) || (formData.get('type') as string)
     const tipo = (formData.get('tipo') as string) || 'musica'
     const descripcion = (formData.get('descripcion') as string) || ''
-    const isGlobal = formData.get('global') === 'true'
-
-    // Soportar campo legacy 'type' y 'itemId'
-    const legacyType = formData.get('type') as string
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 })
@@ -47,7 +64,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Validar tamaño del archivo (máximo 50MB para música)
+    // Validar tamaño del archivo (máximo 50MB)
     const maxSize = 50 * 1024 * 1024 // 50MB
     if (file.size > maxSize) {
       return NextResponse.json({
@@ -55,39 +72,12 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Obtener el owner_id correcto (para registrar en BD)
+    // Obtener el owner_id correcto
     const resourceOwnerId = getResourceOwnerId(currentUser as any)
-    const userEmail = currentUser.email
 
-    // Sanitizar email para usarlo como nombre de carpeta
-    const userFolder = userEmail
-      .replace(/[^a-zA-Z0-9]/g, '_')
-      .toLowerCase()
-      .substring(0, 50)
-
-    // Mapear tipo a nombre de subcarpeta
-    const tipoToFolder: Record<string, string> = {
-      'cortina': 'cortinas',
-      'musica': 'musica',
-      'efecto': 'efectos',
-      'jingle': 'jingles',
-      'intro': 'intros',
-      'outro': 'outros',
-      'voz': 'voces',
-      'publicidad': 'publicidad'
-    }
-    const tipoFolder = tipoToFolder[tipo] || 'otros'
-
-    // Determinar carpeta destino: usuario/tipo/ o global/tipo/
-    const baseFolder = isGlobal ? 'global' : userFolder
-    const targetFolder = `${baseFolder}/${tipoFolder}`
-    const userAudioDir = path.join(AUDIO_BASE_DIR, baseFolder, tipoFolder)
-
-    // Crear directorio si no existe
-    if (!existsSync(userAudioDir)) {
-      await mkdir(userAudioDir, { recursive: true })
-      console.log(`📁 Carpeta creada: ${userAudioDir}`)
-    }
+    // Leer el archivo
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
 
     // Generar nombre único para el archivo
     const timestamp = Date.now()
@@ -96,16 +86,33 @@ export async function POST(request: NextRequest) {
       .replace(/[^a-zA-Z0-9_-]/g, '_')
       .substring(0, 100)
     const uniqueFileName = `${timestamp}_${sanitizedName}.${extension}`
-    const filepath = path.join(userAudioDir, uniqueFileName)
 
-    // Leer el archivo y guardarlo
-    const bytes = await file.arrayBuffer()
-    const buffer = new Uint8Array(bytes)
-    await writeFile(filepath, buffer)
-    console.log(`✅ Archivo guardado: ${filepath}`)
+    // ============================================================
+    // SUBIR A GOOGLE DRIVE
+    // ============================================================
+    console.log(`☁️ Subiendo a Google Drive: ${uniqueFileName}`)
 
-    // URL pública del archivo
-    const audioUrl = `/audio/${targetFolder}/${uniqueFileName}`
+    const folderType = tipoToFolder[tipo] || 'cortinas'
+
+    let driveResult
+    try {
+      driveResult = await uploadFileToDrive(
+        driveRefreshToken,
+        buffer,
+        uniqueFileName,
+        file.type,
+        folderType
+      )
+    } catch (driveError: any) {
+      console.error('❌ Error subiendo a Drive:', driveError)
+      return NextResponse.json({
+        error: 'Error al subir archivo a Google Drive',
+        message: driveError.message || 'Intenta de nuevo o verifica tu conexión con Google Drive',
+        code: 'DRIVE_UPLOAD_ERROR'
+      }, { status: 500 })
+    }
+
+    console.log(`✅ Subido a Drive: ${driveResult.fileId}`)
 
     // Calcular duración aproximada (por tamaño, ~128kbps)
     const fileSizeKB = buffer.length / 1024
@@ -119,12 +126,13 @@ export async function POST(request: NextRequest) {
       .from('biblioteca_audio')
       .insert([{
         nombre: nombre || file.name.replace(/\.[^/.]+$/, ''),
-        audio: audioUrl,
+        audio: driveResult.directLink,
         tipo: tipo,
         descripcion: descripcion,
         duracion: duracionStr,
         duration_seconds: estimatedDurationSec,
-        user_id: isGlobal ? null : resourceOwnerId,  // ✅ Usar owner correcto para multi-tenant
+        user_id: resourceOwnerId,
+        drive_file_id: driveResult.fileId,
         is_active: true
       }])
       .select()
@@ -134,19 +142,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Error al guardar en base de datos' }, { status: 500 })
     }
 
-    console.log(`✅ Audio subido: ${uniqueFileName} (${tipo}) para ${isGlobal ? 'todos' : userEmail}`)
+    console.log(`☁️ Audio subido a Drive: ${uniqueFileName} (${tipo})`)
 
     return NextResponse.json({
       success: true,
-      message: 'Archivo subido exitosamente',
+      message: 'Archivo subido exitosamente a Google Drive',
       data: insertData[0],
-      audioUrl,
+      audioUrl: driveResult.directLink,
       fileName: uniqueFileName,
       originalName: file.name,
       size: file.size,
       type: file.type,
-      folder: targetFolder,
-      s3Key: `local/audio/${targetFolder}/${uniqueFileName}`,
+      storageType: 'drive',
+      driveFileId: driveResult.fileId,
       uploadedAt: new Date().toISOString()
     })
 

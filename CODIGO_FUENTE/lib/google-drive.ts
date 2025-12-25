@@ -130,7 +130,7 @@ export async function uploadFileToDrive(
     file: Buffer,
     fileName: string,
     mimeType: string,
-    folderType: 'cortinas' | 'musica' | 'efectos' | 'jingles' | 'intros' | 'outros' | 'voces'
+    folderType: 'cortinas' | 'musica' | 'efectos' | 'jingles' | 'intros' | 'outros' | 'voces' | 'publicidad'
 ): Promise<{
     fileId: string
     webViewLink: string

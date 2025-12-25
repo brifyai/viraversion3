@@ -120,10 +120,18 @@ function writeString(view: DataView, offset: number, string: string) {
 }
 
 /**
- * Check if URL is a valid remote URL (not local)
+ * Check if URL is a valid URL (not a local file system path)
  */
-function isRemoteUrl(url: string): boolean {
-    return url.startsWith('http://') || url.startsWith('https://')
+function isValidUrl(url: string): boolean {
+    // Accept remote URLs
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        return true
+    }
+    // Accept local API proxy URLs
+    if (url.startsWith('/api/')) {
+        return true
+    }
+    return false
 }
 
 /**
@@ -138,7 +146,7 @@ export async function concatenateAudioSegments(
 
     // Filter out local URLs that can't be downloaded in production
     const validSegments = segments.filter(segment => {
-        if (!isRemoteUrl(segment.url)) {
+        if (!isValidUrl(segment.url)) {
             console.warn(`⚠️ Omitiendo audio local (no disponible en producción): ${segment.title || segment.url}`)
             return false
         }

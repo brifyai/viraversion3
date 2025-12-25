@@ -43,6 +43,7 @@ import {
   SpeakerIcon as Speaker,
   AudioWaveform
 } from 'lucide-react'
+import { GoogleDriveCard } from '@/components/integrations/GoogleDriveCard'
 
 // Software de automatización radial usados en Chile
 const radioAutomationSoftware = [
@@ -902,6 +903,14 @@ export default function IntegracionesPage() {
 
           {/* Integrations Cards */}
           <div className="space-y-6">
+            {/* Integraciones Cloud */}
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold text-gray-700 mb-3">Almacenamiento en la Nube</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <GoogleDriveCard />
+              </div>
+            </div>
+
             {/* Plataformas de Podcast */}
             <Card className="bg-white hover:shadow-md transition-shadow">
               <CardContent className="p-8">
