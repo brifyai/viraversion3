@@ -700,6 +700,10 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
             includeWeather = true,
             timeStrategy = 'auto',
             selectedAdIds = [],  // ✅ NUEVO: IDs de publicidades seleccionadas por el usuario
+            audioConfig = {      // ✅ NUEVO: Configuración de cortinas
+                cortinas_enabled: false,
+                cortinas_frequency: 3
+            },
             voiceSettings = {
                 speed: 13,  // Default +13% como en finalize-newscast
                 pitch: 0,
@@ -1122,6 +1126,69 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
                 voiceId: voiceModel || 'default'
             })
             currentDuration += outroDuration
+        }
+
+        // ============================================================
+        // PASO: INSERCIÓN AUTOMÁTICA DE CORTINAS (si está habilitado)
+        // ============================================================
+        if (audioConfig?.cortinas_enabled && userId) {
+            console.log(`🎵 Cortinas habilitadas - cargando cortinas del usuario...`)
+
+            // Cargar cortinas del usuario desde biblioteca_audio
+            const { data: cortinas } = await supabase
+                .from('biblioteca_audio')
+                .select('*')
+                .eq('tipo', 'cortina')
+                .eq('user_id', userId)
+                .eq('esta_activo', true)
+
+            // Filtrar solo las que tienen URL de Drive (no archivos locales)
+            const cortinasValidas = (cortinas || []).filter((c: any) =>
+                c.audio && c.audio.startsWith('https://')
+            )
+
+            if (cortinasValidas.length > 0) {
+                console.log(`   📦 ${cortinasValidas.length} cortinas encontradas con Drive`)
+
+                const frequency = audioConfig.cortinas_frequency || 3
+                let newsCount = 0
+                let cortinaIndex = 0
+
+                // Insertar cortinas cada N noticias
+                const newTimeline: any[] = []
+                for (const item of timeline) {
+                    newTimeline.push(item)
+
+                    if (item.type === 'news') {
+                        newsCount++
+                        if (newsCount % frequency === 0 && cortinaIndex < cortinasValidas.length) {
+                            const cortina = cortinasValidas[cortinaIndex % cortinasValidas.length]
+                            const cortinaDuration = cortina.duracion_segundos || 5
+
+                            newTimeline.push({
+                                id: `cortina-${Date.now()}-${cortinaIndex}`,
+                                type: 'cortina',
+                                title: cortina.nombre || 'Cortina',
+                                audioUrl: cortina.audio,
+                                duration: cortinaDuration,
+                                isAudio: true
+                            })
+
+                            currentDuration += cortinaDuration
+                            console.log(`   🎵 Cortina "${cortina.nombre}" insertada después de noticia ${newsCount}`)
+                            cortinaIndex++
+                        }
+                    }
+                }
+
+                // Reemplazar timeline con el nuevo que incluye cortinas
+                timeline.length = 0
+                timeline.push(...newTimeline)
+
+                console.log(`   ✅ ${cortinaIndex} cortinas insertadas`)
+            } else {
+                console.log(`   ⚠️ No hay cortinas con Drive configuradas para este usuario`)
+            }
         }
 
         console.log(`📊 Timeline completado: ${timeline.length} items, ${currentDuration}s total (objetivo: ${targetDuration}s)`)

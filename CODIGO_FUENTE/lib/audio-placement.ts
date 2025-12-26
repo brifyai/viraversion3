@@ -77,7 +77,7 @@ export async function loadUserAudios(
         console.log(`   📦 Query retornó ${data?.length || 0} registros`)
 
         // Filtrar por usuario en código (más robusto)
-        const audiosFiltrados = (data || []).filter(a => {
+        let audiosFiltrados = (data || []).filter(a => {
             // Audios globales
             if (a.usuario === 'todos') return true
             // Audios del usuario actual
@@ -87,8 +87,21 @@ export async function loadUserAudios(
             return false
         })
 
+        // ✅ NUEVO: Filtrar solo audios con URLs de Drive (no archivos locales)
+        audiosFiltrados = audiosFiltrados.filter(a => {
+            if (!a.audio) return false
+            // Solo incluir URLs de Drive (https://)
+            if (a.audio.startsWith('https://')) return true
+            // Excluir archivos locales (/audio/...)
+            if (a.audio.startsWith('/')) {
+                console.log(`   ⚠️ Ignorando audio local: "${a.nombre}" (${a.audio.substring(0, 30)}...)`)
+                return false
+            }
+            return false
+        })
+
         // Log detallado
-        console.log(`🎵 Filtrados ${audiosFiltrados.length} audios para este usuario:`)
+        console.log(`🎵 Filtrados ${audiosFiltrados.length} audios para este usuario (con Drive):`)
         audiosFiltrados.forEach(a => {
             console.log(`   - "${a.nombre}" (${a.tipo})`)
             if (a.descripcion) {

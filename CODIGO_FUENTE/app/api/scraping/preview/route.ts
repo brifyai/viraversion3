@@ -24,32 +24,51 @@ function categorizarNoticia(titulo: string, bajada: string = ''): string {
     const texto = `${titulo} ${bajada}`.toLowerCase()
 
     // Orden de prioridad: específico a genérico
+    // IMPORTANTE: Policiales primero para evitar falsos positivos con deportes
     const categorias: { [key: string]: string[] } = {
-        // Regionales primero (más específico) - incluye regiones y ciudades de Chile
+        // ✅ NUEVO: Policiales primero (más específico) - noticias de crimen/seguridad
+        'Policiales': [
+            'carabineros', 'carabinero', 'pdi', 'detenido', 'detuvo', 'detención',
+            'robo', 'asalto', 'asaltaron', 'asesinato', 'homicidio', 'crimen',
+            'delito', 'drogas', 'incautó', 'incautación', 'fiscalía', 'fiscal',
+            'imputado', 'formalizado', 'prisión preventiva', 'violencia', 'agresión',
+            'hurto', 'portonazos', 'encerronas', 'bandas', 'narco', 'tráfico',
+            'armas', 'lesiones', 'accidente', 'siniestro vial', 'colisión', 'volcamiento'
+        ],
+        // Regionales (incluye regiones y ciudades de Chile)
         'Regionales': [
             'región', 'regional', 'provincial', 'comunal', 'municipio', 'alcalde', 'gobernador', 'local',
             'ñuble', 'chillán', 'concepción', 'biobío', 'bio-bio', 'talca', 'maule', 'valparaíso',
             'viña del mar', 'antofagasta', 'temuco', 'araucanía', 'puerto montt', 'los lagos',
             'coquimbo', 'la serena', 'rancagua', 'o\'higgins', 'arica', 'iquique', 'punta arenas',
-            'magallanes', 'aysén', 'los ríos', 'valdivia', 'osorno', 'atacama', 'copiapó'
+            'magallanes', 'aysén', 'los ríos', 'valdivia', 'osorno', 'atacama', 'copiapó',
+            'san carlos', 'bulnes', 'quillón', 'coihueco', 'yungay', 'el carmen', 'pinto',
+            'coelemu', 'quirihue', 'ninhue', 'portezuelo', 'trehuaco', 'cobquecura'
         ],
+        // ✅ MEJORADO: Deportes con términos más específicos
         'Deportes': [
-            'fútbol', 'futbol', 'gol', 'partido', 'estadio', 'selección', 'colo colo', 'colo-colo',
-            'universidad de chile', 'universidad católica', 'liga', 'copa', 'deportes', 'jugador',
-            'técnico', 'entrenador', 'campeonato', 'atleta', 'olímpico', 'mundial', 'champions',
-            'libertadores', 'sudamericana', 'tenis', 'nadal', 'arturo vidal', 'alexis sánchez'
+            'fútbol', 'futbol', 'gol', 'goles', 'selección chilena', 'la roja',
+            'colo colo', 'colo-colo', 'universidad de chile', 'universidad católica',
+            'copa libertadores', 'copa sudamericana', 'copa chile', 'campeonato nacional',
+            'primera división', 'liga chilena', 'jugador', 'jugadores', 'futbolista',
+            'entrenador', 'dt', 'técnico del equipo', 'fichaje', 'transferencia',
+            'atleta', 'olímpico', 'mundial de fútbol', 'champions league',
+            'tenis', 'tenista', 'maratón', 'ciclismo', 'básquetbol', 'voleibol',
+            'arturo vidal', 'alexis sánchez', 'claudio bravo', 'ben brereton'
         ],
         'Política': [
-            'gobierno', 'presidente', 'ministro', 'congreso', 'senado', 'diputado', 'elecciones',
-            'votación', 'político', 'ley', 'decreto', 'boric', 'piñera', 'bachelet', 'carabineros',
-            'pdi', 'fiscalía', 'fiscal', 'tribunal', 'suprema', 'constitucional', 'parlamentario',
-            'izquierda', 'derecha', 'oposición', 'oficialismo', 'reforma', 'proyecto de ley'
+            'gobierno', 'presidente boric', 'ministro', 'ministra', 'congreso', 'senado',
+            'diputado', 'diputada', 'senador', 'senadora', 'elecciones', 'votación',
+            'proyecto de ley', 'decreto', 'constitución', 'constitucional',
+            'parlamentario', 'izquierda', 'derecha', 'oposición', 'oficialismo',
+            'reforma', 'la moneda', 'ejecutivo', 'legislativo'
         ],
         'Economía': [
-            'dólar', 'economía', 'banco', 'imacec', 'inflación', 'mercado', 'bolsa', 'inversión',
-            'finanzas', 'empresas', 'comercio', 'pib', 'cobre', 'minería', 'exportaciones',
-            'importaciones', 'afp', 'pensiones', 'sueldo', 'empleo', 'desempleo', 'precio',
-            'uf', 'ipsa', 'sii', 'impuestos', 'bce', 'banco central', 'recesión', 'crecimiento'
+            'dólar', 'economía', 'banco central', 'imacec', 'inflación', 'uf',
+            'bolsa de comercio', 'ipsa', 'inversión', 'finanzas', 'pib',
+            'cobre', 'minería', 'exportaciones', 'importaciones', 'afp', 'pensiones',
+            'sueldo mínimo', 'empleo', 'desempleo', 'precio', 'sii', 'impuestos',
+            'recesión', 'crecimiento económico', 'empresas', 'comercio exterior'
         ],
         'Mundo': [
             'internacional', 'eeuu', 'estados unidos', 'china', 'rusia', 'ucrania', 'europa',
@@ -58,7 +77,7 @@ function categorizarNoticia(titulo: string, bajada: string = ''): string {
             'venezuela', 'maduro', 'guerra', 'conflicto internacional'
         ],
         'Tecnología': [
-            'tecnología', 'apple', 'google', 'microsoft', 'inteligencia artificial', 'ia', 'openai',
+            'tecnología', 'apple', 'google', 'microsoft', 'inteligencia artificial', 'ia',
             'chatgpt', 'smartphone', 'app', 'digital', 'internet', 'ciberseguridad', 'bitcoin',
             'criptomonedas', 'elon musk', 'tesla', 'meta', 'facebook', 'starlink', 'innovación',
             'startup', 'software', 'datos', 'privacidad digital'
@@ -70,7 +89,7 @@ function categorizarNoticia(titulo: string, bajada: string = ''): string {
         ],
         // Nacionales al final (más genérico, actúa como fallback)
         'Nacionales': [
-            'chile', 'chileno', 'chilena', 'santiago', 'nacional', 'país', 'la moneda',
+            'chile', 'chileno', 'chilena', 'santiago', 'nacional', 'país',
             'metro de santiago', 'transantiago', 'red metropolitana'
         ]
     }
