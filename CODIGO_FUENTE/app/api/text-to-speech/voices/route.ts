@@ -5,7 +5,8 @@ import { NextResponse } from 'next/server'
 export async function GET() {
     try {
         // ✅ Solo voces VoiceMaker configuradas (Vicente y Eliana)
-        // No se buscan voces clonadas de la base de datos
+        // WPM = Palabras Por Minuto BASE (antes de ajuste de velocidad)
+        // Fórmula efectiva: baseWPM × (1 + speed/100) × 0.95
         const voicemakerVoices = process.env.VOICEMAKER_API_KEY ? [
             {
                 id: 'ai3-es-CL-Vicente',
@@ -24,7 +25,7 @@ export async function GET() {
                 language: 'es-CL',
                 type: 'voicemaker',
                 isUserVoice: false,
-                wpm: 162,  // Calibrado intermedio (155=corto, 168=largo)
+                wpm: 162,  // WPM base (Eliana es ligeramente más pausada)
                 tempo: 4.0,
                 avg_pause_ms: 250,
                 energy_profile: 'news'

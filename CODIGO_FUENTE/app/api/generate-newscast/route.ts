@@ -221,9 +221,9 @@ export async function POST(request: NextRequest) {
     // Fórmula: voiceBaseWPM * (1 + speed/100) * CORRECTION_FACTOR
     // CORRECTION_FACTOR compensa la diferencia entre WPM teórico y real del TTS
     // Historial: 0.81→corto, 0.90→12% largo, 0.82→corto con MasterSpeed+1, 0.95→calibración actual
-    const CORRECTION_FACTOR = 0.95
+    const CORRECTION_FACTOR = 0.89  // Calibrado: 157 WPM real medido
     const voiceBaseWPM = voiceWPM || 150  // WPM base de la voz (desde metadata)
-    const speedAdjustment = 1 + ((voiceSettings?.speed ?? 1) / 100)  // Ajuste por velocidad
+    const speedAdjustment = 1 + ((voiceSettings?.speed ?? 0) / 100)  // ✅ FIX: Default 0
     const effectiveWPM = Math.round(voiceBaseWPM * speedAdjustment * CORRECTION_FACTOR)
 
     // ✅ Sin margen adicional - el CORRECTION_FACTOR ya incluye buffer

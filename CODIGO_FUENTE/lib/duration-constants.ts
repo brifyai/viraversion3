@@ -12,7 +12,7 @@
 // - 0.81: Audio 10% corto
 // - 0.90: Audio 12% largo  
 // - 0.82: Objetivo actual (reducir audio largo)
-export const CORRECTION_FACTOR = 0.95
+export const CORRECTION_FACTOR = 0.89  // Calibrado: 139 palabras en 53s = 157 WPM real
 
 // Duraciones fijas de segmentos (en segundos)
 export const INTRO_DURATION = 12      // Intro con hora + clima

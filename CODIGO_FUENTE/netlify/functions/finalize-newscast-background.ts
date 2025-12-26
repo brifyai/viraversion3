@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+﻿import { createClient } from '@supabase/supabase-js'
 
 // ============================================================
 // BACKGROUND FUNCTION: Finalize Newscast (Audio Generation)
@@ -116,13 +116,17 @@ async function generateTTSAudio(
         const data = await response.json()
 
         if (data.success && data.path) {
-            // Calculate duration using adjusted WPM (same formula as generate-newscast-background)
+            // ✅ FIX: Calcular duración usando WPM ajustado (fórmula igual que generate-newscast-background)
+            // Para Vicente: 175 WPM base, para Eliana: 162 WPM base
             const wordCount = text.split(/\s+/).length
-            const baseWPM = 175
-            const CORRECTION_FACTOR = 0.95
+            const isEliana = voiceId.includes('Eliana')
+            const baseWPM = isEliana ? 162 : 175  // WPM calibrado por voz
+            const CORRECTION_FACTOR = 0.89  // Calibrado: 157 WPM real medido
             const speedFactor = 1 + ((voiceSettings?.speed ?? 0) / 100)
             const effectiveWPM = Math.round(baseWPM * speedFactor * CORRECTION_FACTOR)
             const duration = Math.round((wordCount / effectiveWPM) * 60)
+
+            console.log(`   📊 WPM: base ${baseWPM} × speed ${speedFactor.toFixed(2)} × factor ${CORRECTION_FACTOR} = ${effectiveWPM} (${wordCount} palabras = ${duration}s)`)
 
             return {
                 success: true,
@@ -188,9 +192,11 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
         console.log(`📰 Timeline tiene ${timeline.length} items`)
 
         // 3. Obtener configuración de voz
-        const globalVoiceId = noticiero.metadata?.config?.voiceModel || 'default'
+        // ✅ FIX: Buscar voice_model en múltiples ubicaciones posibles
+        const globalVoiceId = noticiero.metadata?.voice_model || noticiero.metadata?.config?.voiceModel || 'ai3-es-CL-Vicente'
+        // ✅ FIX: Leer voice_settings correctamente del metadata
         const globalVoiceSettings = noticiero.metadata?.voice_settings || {
-            speed: 13,
+            speed: 1,   // Default base (frontend envía 1 por defecto)
             pitch: 0,
             volume: 2
         }
@@ -238,9 +244,14 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
 
         await updateFinalizeJobStatus(jobId, 'processing', 75, 'Guardando cambios...')
 
-        // 5. Calcular duración total REAL de los audios generados
-        const totalDuration = timeline.reduce((sum: number, item: any) => sum + (item.duration || 0), 0)
-        console.log(`📊 Duración total real: ${totalDuration}s (${Math.floor(totalDuration / 60)}:${(totalDuration % 60).toString().padStart(2, '0')})`)
+        // 5. Calcular duracion total REAL de los audios generados
+        // FIX: Incluir silencios entre segmentos (1.5s por cada transicion)
+        const audioItemsCount = timeline.filter((item: any) => item.audioUrl || item.duration).length
+        const silenceGapSeconds = 1.5
+        const totalSilenceTime = Math.max(0, audioItemsCount - 1) * silenceGapSeconds
+        const totalAudioDuration = timeline.reduce((sum: number, item: any) => sum + (item.duration || 0), 0)
+        const totalDuration = Math.round(totalAudioDuration + totalSilenceTime)
+        console.log(`📊 Duración total: ${totalDuration}s [audio: ${totalAudioDuration}s + silencios: ${totalSilenceTime}s]`)
 
         // 6. Actualizar timeline en BD con metadata corregido
         const existingMetadata = typeof noticiero.datos_timeline === 'object' && noticiero.datos_timeline?.metadata
@@ -330,3 +341,4 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
 }
 
 export { handler }
+

@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
@@ -59,8 +59,11 @@ export function NewscastAudioPlayer({ timeline, newscastName = 'noticiero' }: Ne
         }))
     const currentItem = audioItems[currentIndex]
 
-    // Calculate total duration
-    const totalDuration = audioItems.reduce((sum, item) => sum + (item.duration || 0), 0)
+    // Calculate total duration (including silence gaps between tracks)
+    const SILENCE_GAP_SECONDS = 1.5  // Mismo valor que TIMING_CONSTANTS.SILENCE_BETWEEN_NEWS
+    const audioDuration = audioItems.reduce((sum, item) => sum + (item.duration || 0), 0)
+    const silenceDuration = Math.max(0, audioItems.length - 1) * SILENCE_GAP_SECONDS
+    const totalDuration = Math.round(audioDuration + silenceDuration)
 
     useEffect(() => {
         if (audioRef.current) {

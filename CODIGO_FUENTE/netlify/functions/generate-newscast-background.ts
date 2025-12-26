@@ -705,7 +705,7 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
                 cortinas_frequency: 3
             },
             voiceSettings = {
-                speed: 13,  // Default +13% como en finalize-newscast
+                speed: 1,   // ✅ FIX: Default 1 (sin ajuste) - el frontend envía el valor real
                 pitch: 0,
                 volume: 2,
                 fmRadioEffect: false,
@@ -715,9 +715,10 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
 
         // WPM calibrado - igual que en route.ts
         // Fórmula: voiceBaseWPM * (1 + speed/100) * CORRECTION_FACTOR
-        const CORRECTION_FACTOR = 0.95
+        // ✅ AJUSTADO: Factor de 0.92 porque audio real es ~3-4% más largo que estimado
+        const CORRECTION_FACTOR = 0.89  // Calibrado: 157 WPM real medido
         const voiceBaseWPM = voiceWPM || 175
-        const speedAdjustment = 1 + ((voiceSettings?.speed ?? 1) / 100)
+        const speedAdjustment = 1 + ((voiceSettings?.speed ?? 0) / 100)
         const effectiveWPM = Math.round(voiceBaseWPM * speedAdjustment * CORRECTION_FACTOR)
 
         console.log(`🎤 WPM: base ${voiceBaseWPM} × speed ${speedAdjustment.toFixed(2)} × factor ${CORRECTION_FACTOR} = ${effectiveWPM} | Objetivo: ${targetDuration}s`)

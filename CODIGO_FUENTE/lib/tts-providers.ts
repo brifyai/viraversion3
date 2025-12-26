@@ -3,11 +3,11 @@ import 'server-only';
 import { TTSProvider, TTSRequest, TTSResponse } from './types';
 
 // ============================================================================
-// VOICEMAKER DEFAULT VOICES (Spanish) - Con WPM Calibrado
+// VOICEMAKER DEFAULT VOICES (Spanish) - Con WPM Base
 // ============================================================================
-// WPM Calibrado: Medido empíricamente considerando MasterSpeed +15
-// Fórmula: WPM_base * (1 + MasterSpeed/100) = WPM real
-// Ej: 150 WPM * 1.15 = ~172 WPM efectivo
+// WPM Base: Valor ANTES del ajuste de velocidad
+// Fórmula efectiva: WPM_base * (1 + speed/100) * CORRECTION_FACTOR
+// CORRECTION_FACTOR = 0.89 (calibrado: 139 palabras en 53s = 157 WPM real)
 // ============================================================================
 export const VOICEMAKER_VOICES = {
   // Voz masculina principal - Vicente tiende a ser ligeramente más rápido
@@ -16,7 +16,7 @@ export const VOICEMAKER_VOICES = {
     name: 'Vicente (Masculino)',
     engine: 'neural',
     language: 'es-CL',
-    wpm: 201,  // Calibrado con datos reales (antes 175, estimaciones 17% muy largas)
+    wpm: 175,  // WPM base (antes de ajuste de velocidad)
     avgPauseMs: 200  // Pausa promedio entre frases
   },
   // Voz femenina principal - Eliana es ligeramente más pausada
@@ -25,7 +25,7 @@ export const VOICEMAKER_VOICES = {
     name: 'Eliana (Femenino)',
     engine: 'neural',
     language: 'es-CL',
-    wpm: 195,  // Calibrado con datos reales (antes 168, estimaciones 17% muy largas)
+    wpm: 162,  // WPM base (Eliana es más pausada que Vicente)
     avgPauseMs: 250  // Pausa promedio entre frases
   },
   // Aliases para compatibilidad
@@ -34,7 +34,7 @@ export const VOICEMAKER_VOICES = {
     name: 'Vicente (Masculino)',
     engine: 'neural',
     language: 'es-CL',
-    wpm: 201,
+    wpm: 175,
     avgPauseMs: 200
   },
   FEMALE_ES: {
@@ -42,7 +42,7 @@ export const VOICEMAKER_VOICES = {
     name: 'Eliana (Femenino)',
     engine: 'neural',
     language: 'es-CL',
-    wpm: 195,
+    wpm: 162,
     avgPauseMs: 250
   }
 };
@@ -50,7 +50,7 @@ export const VOICEMAKER_VOICES = {
 // Helper para obtener WPM calibrado de una voz
 export function getCalibratedWPM(voiceId: string): number {
   const voiceEntry = Object.values(VOICEMAKER_VOICES).find(v => v.id === voiceId);
-  return voiceEntry?.wpm || 198;  // Default calibrado para VoiceMaker (datos reales)
+  return voiceEntry?.wpm || 175;  // Default = WPM base de Vicente
 }
 
 // Constantes de timing para cálculos precisos
