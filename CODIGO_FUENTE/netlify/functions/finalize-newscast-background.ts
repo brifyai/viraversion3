@@ -116,22 +116,50 @@ async function generateTTSAudio(
         const data = await response.json()
 
         if (data.success && data.path) {
-            // ✅ FIX: Calcular duración usando WPM ajustado (fórmula igual que generate-newscast-background)
-            // Para Vicente: 175 WPM base, para Eliana: 162 WPM base
+            // ✅ FASE 1: Medir duración REAL del audio
+            // Descargar el audio de VoiceMaker y medir su duración
+            let realDuration: number
+
+            // Calcular duración estimada como fallback
             const wordCount = text.split(/\s+/).length
             const isEliana = voiceId.includes('Eliana')
-            const baseWPM = isEliana ? 162 : 175  // WPM calibrado por voz
-            const CORRECTION_FACTOR = 0.89  // Calibrado: 157 WPM real medido
+            const baseWPM = isEliana ? 162 : 175
+            const CORRECTION_FACTOR = 0.89
             const speedFactor = 1 + ((voiceSettings?.speed ?? 0) / 100)
             const effectiveWPM = Math.round(baseWPM * speedFactor * CORRECTION_FACTOR)
-            const duration = Math.round((wordCount / effectiveWPM) * 60)
+            const estimatedDuration = Math.round((wordCount / effectiveWPM) * 60)
 
-            console.log(`   📊 WPM: base ${baseWPM} × speed ${speedFactor.toFixed(2)} × factor ${CORRECTION_FACTOR} = ${effectiveWPM} (${wordCount} palabras = ${duration}s)`)
+            try {
+                // Descargar el audio para medir su duración
+                const audioResponse = await fetch(data.path)
+                if (audioResponse.ok) {
+                    const audioBuffer = await audioResponse.arrayBuffer()
+                    const mp3Duration = require('mp3-duration')
+
+                    // mp3-duration puede aceptar un Buffer
+                    realDuration = await new Promise<number>((resolve, reject) => {
+                        mp3Duration(Buffer.from(audioBuffer), (err: Error | null, duration: number) => {
+                            if (err) reject(err)
+                            else resolve(Math.round(duration))
+                        })
+                    })
+
+                    console.log(`   📊 Duración REAL: ${realDuration}s (estimada: ${estimatedDuration}s, diff: ${realDuration - estimatedDuration}s)`)
+                } else {
+                    console.warn(`   ⚠️ No se pudo descargar audio para medir, usando estimada`)
+                    realDuration = estimatedDuration
+                }
+            } catch (measureError) {
+                console.warn(`   ⚠️ Error midiendo duración: ${measureError}. Usando estimada.`)
+                realDuration = estimatedDuration
+            }
+
+            console.log(`   📊 WPM efectivo: ${effectiveWPM} (${wordCount} palabras)`)
 
             return {
                 success: true,
                 audioUrl: data.path,
-                duration
+                duration: realDuration  // ✅ Duración REAL medida
             }
         } else {
             return { success: false, error: 'VoiceMaker returned no path' }
@@ -245,13 +273,9 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
         await updateFinalizeJobStatus(jobId, 'processing', 75, 'Guardando cambios...')
 
         // 5. Calcular duracion total REAL de los audios generados
-        // FIX: Incluir silencios entre segmentos (1.5s por cada transicion)
-        const audioItemsCount = timeline.filter((item: any) => item.audioUrl || item.duration).length
-        const silenceGapSeconds = 1.5
-        const totalSilenceTime = Math.max(0, audioItemsCount - 1) * silenceGapSeconds
-        const totalAudioDuration = timeline.reduce((sum: number, item: any) => sum + (item.duration || 0), 0)
-        const totalDuration = Math.round(totalAudioDuration + totalSilenceTime)
-        console.log(`📊 Duración total: ${totalDuration}s [audio: ${totalAudioDuration}s + silencios: ${totalSilenceTime}s]`)
+        // ✅ NOTA: No agregamos silencios porque la concatenación no los incluye
+        const totalDuration = timeline.reduce((sum: number, item: any) => sum + (item.duration || 0), 0)
+        console.log(`📊 Duración total REAL: ${totalDuration}s (${Math.floor(totalDuration / 60)}:${(totalDuration % 60).toString().padStart(2, '0')})`)
 
         // 6. Actualizar timeline en BD con metadata corregido
         const existingMetadata = typeof noticiero.datos_timeline === 'object' && noticiero.datos_timeline?.metadata

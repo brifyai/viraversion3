@@ -152,6 +152,25 @@ export async function POST(request: NextRequest) {
           fs.writeFileSync(filePath, Buffer.from(result.audioData))
         }
 
+        // ✅ FASE 1: Medir duración REAL del audio MP3
+        const mp3Duration = require('mp3-duration')
+        const util = require('util')
+        const getMp3Duration = util.promisify(mp3Duration)
+
+        let realDuration = result.duration || 0  // Fallback a estimación
+        try {
+          const measuredDuration = await getMp3Duration(filePath)
+          realDuration = Math.round(measuredDuration)
+          console.log(`📊 Duración medida: ${realDuration}s (estimada: ${result.duration || 0}s)`)
+        } catch (durationError) {
+          console.warn('⚠️ No se pudo medir duración MP3, usando estimada:', durationError)
+          // Fallback: estimar por palabras
+          if (!realDuration) {
+            const words = text.trim().split(/\s+/).length
+            realDuration = Math.round((words / 157) * 60)  // 157 WPM calibrado
+          }
+        }
+
         const audioUrl = `/generated-audio/${fileName}`
         const processingTime = Date.now() - startTime
 
@@ -162,13 +181,15 @@ export async function POST(request: NextRequest) {
           success: true,
           provider: 'voicemaker',
           voice: voiceId,
-          duration: result.duration || 0,
+          duration: realDuration,  // ✅ Duración REAL medida del MP3
           audioUrl: audioUrl,
           voicemakerUrl: result.audioUrl,  // URL original de VoiceMaker (24h)
           format: 'mp3',
           metadata: {
             textLength: text.length,
             processingTime,
+            estimatedDuration: result.duration || 0,  // Mantener estimación para comparar
+            realDuration: realDuration,  // ✅ Nueva: duración real
             estimatedCost: result.cost || 0,
             provider: 'VoiceMaker API',
             configuredProviders: ['VoiceMaker'],

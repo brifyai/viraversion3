@@ -11,6 +11,147 @@ import { fetchWithRetry } from './utils'
 import { detectRepetitions, buildCorrectivePrompt, type RepetitionAnalysis } from './text-validation'
 
 // ==================================================
+// CONVERSIÓN DE NÚMEROS A PALABRAS (ESPAÑOL CHILENO)
+// ==================================================
+// Convierte números a texto para TTS preciso
+// Ej: 155772 -> "ciento cincuenta y cinco mil setecientos setenta y dos"
+// ==================================================
+
+const UNIDADES = ['', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve']
+const ESPECIALES = ['diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciséis', 'diecisiete', 'dieciocho', 'diecinueve']
+const DECENAS = ['', 'diez', 'veinte', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa']
+const CENTENAS = ['', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos', 'seiscientos', 'setecientos', 'ochocientos', 'novecientos']
+
+function convertirCentenas(n: number): string {
+    if (n === 0) return ''
+    if (n === 100) return 'cien'
+
+    const centena = Math.floor(n / 100)
+    const resto = n % 100
+
+    let resultado = CENTENAS[centena]
+
+    if (resto > 0) {
+        resultado += (resultado ? ' ' : '') + convertirDecenas(resto)
+    }
+
+    return resultado
+}
+
+function convertirDecenas(n: number): string {
+    if (n === 0) return ''
+    if (n < 10) return UNIDADES[n]
+    if (n < 20) return ESPECIALES[n - 10]
+    if (n < 30) {
+        if (n === 20) return 'veinte'
+        return 'veinti' + UNIDADES[n - 20]
+    }
+
+    const decena = Math.floor(n / 10)
+    const unidad = n % 10
+
+    if (unidad === 0) return DECENAS[decena]
+    return DECENAS[decena] + ' y ' + UNIDADES[unidad]
+}
+
+function convertirMiles(n: number): string {
+    if (n === 0) return ''
+    if (n === 1000) return 'mil'
+
+    const miles = Math.floor(n / 1000)
+    const resto = n % 1000
+
+    let resultado = ''
+    if (miles === 1) {
+        resultado = 'mil'
+    } else if (miles > 1) {
+        resultado = convertirCentenas(miles) + ' mil'
+    }
+
+    if (resto > 0) {
+        resultado += ' ' + convertirCentenas(resto)
+    }
+
+    return resultado.trim()
+}
+
+function convertirMillones(n: number): string {
+    if (n === 0) return 'cero'
+    if (n < 1000) return convertirCentenas(n)
+    if (n < 1000000) return convertirMiles(n)
+
+    const millones = Math.floor(n / 1000000)
+    const resto = n % 1000000
+
+    let resultado = ''
+    if (millones === 1) {
+        resultado = 'un millón'
+    } else {
+        resultado = convertirMiles(millones) + ' millones'
+    }
+
+    if (resto > 0) {
+        if (resto < 1000) {
+            resultado += ' ' + convertirCentenas(resto)
+        } else {
+            resultado += ' ' + convertirMiles(resto)
+        }
+    }
+
+    return resultado.trim()
+}
+
+/**
+ * Convierte un número a palabras en español chileno
+ * @param num Número a convertir (0 a 999,999,999)
+ * @returns Texto en español
+ */
+export function numberToWords(num: number): string {
+    // Manejar negativos
+    if (num < 0) return 'menos ' + numberToWords(Math.abs(num))
+
+    // Manejar cero
+    if (num === 0) return 'cero'
+
+    // Limitar a mil millones
+    if (num >= 1000000000) {
+        const billones = Math.floor(num / 1000000000)
+        const resto = num % 1000000000
+        let resultado = billones === 1 ? 'mil millones' : convertirMiles(billones) + ' mil millones'
+        if (resto > 0) resultado += ' ' + convertirMillones(resto)
+        return resultado.trim()
+    }
+
+    return convertirMillones(Math.floor(num))
+}
+
+/**
+ * Convierte números en un texto a palabras
+ * Maneja formatos: 155.772 (miles con punto), 1,5 (decimales con coma), 1.5 (decimales con punto simple)
+ */
+export function convertNumbersInText(text: string): string {
+    if (!text) return ''
+
+    return text
+        // Formato chileno: 155.772 (punto como separador de miles)
+        .replace(/\b(\d{1,3}(?:\.\d{3})+)\b/g, (match) => {
+            const num = parseInt(match.replace(/\./g, ''), 10)
+            return numberToWords(num)
+        })
+        // Números simples: 15, 100, 2024
+        .replace(/\b(\d+)\b/g, (match) => {
+            const num = parseInt(match, 10)
+            // No convertir años (1900-2100) ni números muy pequeños en contexto de fechas
+            if (num >= 1900 && num <= 2100) {
+                // Mantener años como están - TTS los lee bien
+                return match
+            }
+            return numberToWords(num)
+        })
+}
+
+
+// ==================================================
 // PREPARACIÓN DE CONTENIDO ANTES DE ENVIAR A IA
 // ==================================================
 // Limpia y trunca el contenido para evitar respuestas vacías
@@ -728,7 +869,8 @@ function fallbackHumanize(text: string, transitionPhrase: string = '', targetWor
 export function sanitizeForTTS(text: string): string {
     if (!text) return ''
 
-    return text
+    // Paso 1: Limpiar el texto
+    let cleaned = text
         // Eliminar timestamps
         .replace(/^\d{1,2}:\d{2}\s*(hrs|horas|pm|am)?\s*[|•-]\s*/gi, '')
         // Eliminar prefijos
@@ -759,8 +901,13 @@ export function sanitizeForTTS(text: string): string {
         .replace(/Resumen generado con.*?Inteligencia Artificial.*?BioBioChile/gis, '')
         .replace(/revisado por el autor de este artículo/gi, '')
         .replace(/Seguimos criterios de Ética y transparencia de BioBioChile/gi, '')
-
         // Limpiar espacios
         .replace(/\s+/g, ' ')
         .trim()
+
+    // Paso 2: Convertir números a palabras para conteo preciso
+    // Esto permite que "155.772 hectáreas" se cuente como ~10 palabras, no 2
+    cleaned = convertNumbersInText(cleaned)
+
+    return cleaned
 }
