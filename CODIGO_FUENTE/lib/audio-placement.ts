@@ -7,7 +7,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { CHUTES_CONFIG, getChutesHeaders } from './chutes-config'
+import { GEMINI_CONFIG, getGeminiUrl, parseGeminiResponse } from './gemini-config'
 import { logTokenUsage, calculateChutesAICost } from './usage-logger'
 import { fetchWithRetry } from './utils'
 
@@ -187,75 +187,77 @@ export async function decideAudioPlacements(
             return []
         }
 
-        // Verificar que Chutes está configurado
-        if (!CHUTES_CONFIG.apiKey) {
-            console.error('❌ CHUTES_API_KEY no configurada')
+        // Verificar que Gemini está configurado
+        if (!GEMINI_CONFIG.apiKey) {
+            console.error('❌ GEMINI_API_KEY no configurada')
             return []
         }
 
         const prompt = buildPlacementPrompt(audios, timeline)
-        console.log('🤖 Solicitando placement de audios a Chutes AI...')
+        console.log('🤖 Solicitando placement de audios a Gemini AI...')
+
+        // ✅ MIGRADO A GEMINI AI
+        const systemPrompt = 'Eres un asistente que responde SOLO con JSON válido. No uses markdown ni explicaciones.'
+        const fullPrompt = `${systemPrompt}\n\n${prompt}`
 
         const response = await fetchWithRetry(
-            CHUTES_CONFIG.endpoints.chatCompletions,
+            getGeminiUrl(),
             {
                 method: 'POST',
-                headers: getChutesHeaders(),
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    model: CHUTES_CONFIG.model,
-                    messages: [
-                        {
-                            role: 'system',
-                            content: 'Eres un asistente que responde SOLO con JSON válido. No uses markdown ni explicaciones.'
-                        },
-                        {
-                            role: 'user',
-                            content: prompt
-                        }
-                    ],
-                    temperature: 0.3, // Más determinístico
-                    max_tokens: 1024
+                    contents: [{ parts: [{ text: fullPrompt }] }],
+                    generationConfig: {
+                        temperature: 0.3,
+                        topK: 40,
+                        topP: 0.95,
+                        maxOutputTokens: 1024
+                    }
                 })
             },
             {
                 retries: 2,
                 backoff: 1000,
-                onRetry: (attempt) => console.log(`🔄 Reintentando placement(intento ${attempt})...`)
+                onRetry: (attempt: number) => console.log(`🔄 Reintentando placement(intento ${attempt})...`)
             }
         )
 
         if (!response.ok) {
             const errorText = await response.text()
-            console.error('❌ Error de Chutes AI:', errorText)
+            console.error('❌ Error de Gemini AI:', errorText)
             return []
         }
 
         const data = await response.json()
 
-        // Calcular tokens usados
-        const tokensUsed = (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0)
+        // Parsear respuesta de Gemini
+        let content = '{}'
+        try {
+            content = parseGeminiResponse(data)
+        } catch (e) {
+            console.error('❌ Error parseando respuesta Gemini:', e)
+            return []
+        }
+
+        // Calcular tokens usados (estimación)
+        const tokensUsed = Math.ceil((prompt.length + content.length) / 4)
         const cost = calculateChutesAICost(tokensUsed)
 
         // Registrar uso de tokens
         if (tokensUsed > 0) {
             await logTokenUsage({
                 user_id: userId,
-                servicio: 'chutes',
+                servicio: 'chutes' as const,  // ✅ Compatible con tipo existente
                 operacion: 'audio_placement',
                 tokens_usados: tokensUsed,
                 costo: cost,
                 metadata: {
-                    model: CHUTES_CONFIG.model,
+                    model: GEMINI_CONFIG.model,
                     audios_count: audios.length,
-                    timeline_count: timeline.length,
-                    prompt_tokens: data.usage?.prompt_tokens || 0,
-                    completion_tokens: data.usage?.completion_tokens || 0
+                    timeline_count: timeline.length
                 }
             })
         }
-
-        // Parsear respuesta
-        const content = data.choices?.[0]?.message?.content || '{}'
 
         // Limpiar respuesta (quitar posible markdown)
         let cleanContent = content.trim()

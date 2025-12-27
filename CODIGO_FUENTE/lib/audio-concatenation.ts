@@ -123,6 +123,10 @@ function writeString(view: DataView, offset: number, string: string) {
  * Check if URL is a valid URL (not a local file system path)
  */
 function isValidUrl(url: string): boolean {
+    // Accept data URLs (Base64 encoded audio)
+    if (url.startsWith('data:')) {
+        return true
+    }
     // Accept remote URLs
     if (url.startsWith('http://') || url.startsWith('https://')) {
         return true

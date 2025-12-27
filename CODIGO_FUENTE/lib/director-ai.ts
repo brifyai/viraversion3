@@ -8,8 +8,9 @@
 // ==================================================
 
 import { logTokenUsage, calculateChutesAICost } from './usage-logger'
-import { CHUTES_CONFIG, getChutesHeaders } from './chutes-config'
+import { GEMINI_CONFIG, getGeminiUrl, parseGeminiResponse } from './gemini-config'
 import { fetchWithRetry } from './utils'
+import { getDirectorPrompt } from './prompts'
 
 // Tipos de entrada
 export interface NoticiaParaDirector {
@@ -137,30 +138,33 @@ Responde con este JSON exacto:
         // ✅ Delay antes de llamar a la IA para evitar 429 en producción
         await new Promise(resolve => setTimeout(resolve, 2000))
 
+        // ✅ MIGRADO A GEMINI AI
+        const fullPrompt = `${DIRECTOR_SYSTEM_PROMPT}\n\n${userPrompt}`
+
         const response = await fetchWithRetry(
-            CHUTES_CONFIG.endpoints.chatCompletions,
+            getGeminiUrl(),
             {
                 method: 'POST',
-                headers: getChutesHeaders(),
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    model: CHUTES_CONFIG.model,
-                    messages: [
-                        { role: 'system', content: DIRECTOR_SYSTEM_PROMPT },
-                        { role: 'user', content: userPrompt }
-                    ],
-                    max_tokens: 1500,
-                    temperature: 0.3  // Baja temperatura para respuestas consistentes
+                    contents: [{ parts: [{ text: fullPrompt }] }],
+                    generationConfig: {
+                        temperature: 0.3,
+                        topK: 40,
+                        topP: 0.95,
+                        maxOutputTokens: 1500
+                    }
                 })
             },
-            3
+            { retries: 3, backoff: 2000 }
         )
 
         if (!response.ok) {
-            throw new Error(`Error API: ${response.status}`)
+            throw new Error(`Gemini API Error: ${response.status}`)
         }
 
         const data = await response.json()
-        const content = data.choices?.[0]?.message?.content?.trim()
+        const content = parseGeminiResponse(data)
 
         // Calcular tokens y registrar
         const inputTokens = Math.ceil((DIRECTOR_SYSTEM_PROMPT.length + userPrompt.length) / 4)
@@ -170,7 +174,7 @@ Responde con este JSON exacto:
 
         await logTokenUsage({
             user_id: userId,
-            servicio: 'chutes',
+            servicio: 'chutes' as const,  // ✅ Compatible con tipo existente
             operacion: 'director',
             tokens_usados: totalTokens,
             costo: cost,

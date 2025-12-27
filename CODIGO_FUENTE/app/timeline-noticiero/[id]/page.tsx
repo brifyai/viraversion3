@@ -176,7 +176,7 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
             type: item.type || item.tipo || 'news',
             category: item.category || item.categoria || 'general',
             duration: item.duration || item.duracion || 30,
-            audioUrl: item.audioUrl || item.url_audio,
+            audioUrl: item.audioBase64 ? `data:audio/mpeg;base64,${item.audioBase64}` : (item.audioUrl || item.url_audio),
             versions: item.versions,
             activeVersion: item.activeVersion
           })),
@@ -367,7 +367,7 @@ export default function TimelineNoticiero({ params }: { params: { id: string } }
               type: item.type || item.tipo || 'news',
               category: item.category || item.categoria || 'general',
               duration: item.duration || item.duracion || 30,
-              audioUrl: item.audioUrl || item.url_audio,
+              audioUrl: item.audioBase64 ? `data:audio/mpeg;base64,${item.audioBase64}` : (item.audioUrl || item.url_audio),
               versions: item.versions,
               activeVersion: item.activeVersion
             }

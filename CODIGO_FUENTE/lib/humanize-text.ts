@@ -6,9 +6,53 @@
 // ==================================================
 
 import { logTokenUsage, calculateChutesAICost } from './usage-logger'
-import { CHUTES_CONFIG, getChutesHeaders } from './chutes-config'
+import { GEMINI_CONFIG, getGeminiUrl, buildGeminiRequestBody, parseGeminiResponse } from './gemini-config'
 import { fetchWithRetry } from './utils'
 import { detectRepetitions, buildCorrectivePrompt, type RepetitionAnalysis } from './text-validation'
+import { getHumanizerSystemPrompt, getHumanizerUserPrompt, getReductionPrompt, ANTI_REPETITION_SYSTEM } from './prompts'
+
+// Helper function para llamar a Gemini AI (reemplaza Chutes AI)
+async function callGeminiAI(
+    systemPrompt: string,
+    userPrompt: string,
+    options?: { maxTokens?: number; temperature?: number }
+): Promise<{ success: boolean; content?: string; error?: string }> {
+    const fullPrompt = `${systemPrompt}\n\n${userPrompt}`
+
+    try {
+        const response = await fetchWithRetry(
+            getGeminiUrl(),
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: fullPrompt }] }],
+                    generationConfig: {
+                        temperature: options?.temperature ?? 0.7,
+                        topK: 40,
+                        topP: 0.95,
+                        maxOutputTokens: options?.maxTokens ?? 2000
+                    }
+                })
+            },
+            { retries: 3, backoff: 2000 }
+        )
+
+        if (!response.ok) {
+            const errorText = await response.text()
+            console.warn(`⚠️ Gemini API error: ${response.status} - ${errorText}`)
+            return { success: false, error: `Gemini error: ${response.status}` }
+        }
+
+        const data = await response.json()
+        const content = parseGeminiResponse(data)
+
+        return { success: true, content }
+    } catch (error) {
+        console.error('❌ Gemini API call failed:', error)
+        return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    }
+}
 
 // ==================================================
 // CONVERSIÓN DE NÚMEROS A PALABRAS (ESPAÑOL CHILENO)
@@ -410,118 +454,34 @@ export async function humanizeText(
         const topicAnchor = extractTopic(cleanedText)
 
         // ============================================================
-        // PROMPT v6 - TTS READY + Anti-Comas + Anclaje Temático
+        // PROMPTS CENTRALIZADOS (desde lib/prompts.ts)
         // ============================================================
-        const systemPrompt = `Eres un editor y locutor profesional de radio en Chile. Tu tarea es transformar noticias en **guiones radiales naturales y fluidos para TTS** (texto a voz).
-
-⚠️ OBJETIVO PRINCIPAL: Que el texto **suene como si un locutor de radio lo estuviera leyendo en vivo**, no como una lista de datos.
-
-✅ DEBES:
-- **Priorizar la fluidez sobre la longitud estricta de las oraciones.** Usa oraciones completas, pero **conéctalas de manera natural**. **Controla la respiración para TTS:** Cada oración debe poder leerse en UNA sola respiración (ideal 12-18 palabras, máximo 20).
-- **Usar comas CON PROPÓSITO:** Solo para pausas naturales, enumeraciones cortas, o conectar ideas relacionadas **dentro de la misma oración**. Ej: "En el vehículo viajaba una familia de cuatro personas, donde el conductor falleció en el acto".
-- **Variar la longitud de las frases.** Mezcla frases cortas (de impacto) con algunas más largas (de contexto) para crear un ritmo auditivo agradable.
-- **Usar un lenguaje radial chileno estándar y coloquial.** Ej: "chocó por detrás", "quedó grave", "fue detenido".
-- **Construir una mini-narrativa:** Conectar los hechos de forma lógica (qué pasó, dónde, consecuencias, estado de la investigación).
-- **Cerrar con una frase que dé un sentido de conclusión** al bloque informativo.
-- **CORREGIR ERRORES DE TEXTO:** Si ves "(s)" después de un cargo, ELIMÍNALO completamente (ej: "Seremi (s) de Salud" → "Seremi de Salud")
-- **CORREGIR TYPOS:** Arregla errores como "Gustav0" → "Gustavo", "G0biern0" → "Gobierno"
-
-❌ NUNCA:
-- Escribas una sucesión de oraciones ultra-cortas y desconectadas (estilo "punto, punto, punto").
-- Uses comas para separar ideas totalmente distintas (ahí sí es punto).
-- Incluyas frases redundantes como "se informa que" o "se supo que".
-- Inventes datos o declaraciones.
-- Introduzcas temas ajenos al texto original.
-
-🧠 REGLA DE ORO CORREGIDA:
-> "Si al leer en voz alta suenas como un robot que enumera datos… falta conexión. Usa una coma o une las ideas en una oración más larga y natural."
-
-📝 ESTRUCTURA NATURAL:
-1. **Gancho/Lead:** La noticia en su esencia.
-2. **Cuerpo/Contexto:** Los detalles importantes conectados con fluidez.
-3. **Consecuencia/Desenlace:** Qué pasó después y el estado actual.
-4. **Cierre:** Una oración que redondea la información.
-
-🎯 EXTENSIÓN: ${targetWords} palabras. Es preferible un texto un poco más largo que suene natural, a uno ultra-corto que suene artificial.
-
-DEVUELVES ÚNICAMENTE el guion final. Nada más.`
-
-        const userPrompt = `Actúa como un locutor de radio chileno. Tu radio está ubicada en ${region}.
-
-🎯 **ANÁLISIS GEOGRÁFICO (HACER PRIMERO):**
-1. Lee la noticia y DETERMINA: ¿Ocurre en ${region} o en otra región?
-2. **PISTAS:** Busca "seremi de...", "municipalidad de...", nombres de ciudades
-3. **DECISIÓN:**
-   - Si es en ${region} → Noticia LOCAL
-   - Si es en otra región → Noticia EXTERNA
-
-🎯 **NOTICIA PRINCIPAL:** "${topicAnchor}"
-
-🗣️ **COMO LOCUTAR PARA TTS:**
-- **PARA TTS (TEXT-TO-SPEECH):**
-  • Máximo 20-22 palabras por oración (para respiración natural)
-  • Usa comas SOLO para pausas breves dentro de la misma idea
-  • Evita oraciones subordinadas complejas
-  • Simplifica términos técnicos: "zarpe" → "partida", "tanquero" → "buque petrolero"
-
-- **SEGÚN TIPO DE NOTICIA:**
-  • **LOCAL (en ${region}):** "Aquí en ${region}", "En nuestra región"
-  • **EXTERNA (otra región):** "Desde [región]", "En [región]"
-  • **INTERNACIONAL:** "A nivel internacional", "En el extranjero"
-
-- **ESTILO RADIAL CHILENO:**
-  • Conversacional, como hablando con un vecino
-  • Conectores naturales: "y", "pero", "además", "mientras tanto"
-  • Cierre con frase relevante para el oyente chileno
-
-📰 **INFORMACIÓN BASE:**
-"${cleanedText}"
-
-${transitionPhrase ? `👉 **ARRANCA CON:** "${transitionPhrase}"` : ''}
-
-→ **PASO 1:** Determina LOCAL/EXTERNA/INTERNACIONAL.
-→ **PASO 2:** Locuta optimizado para TTS.
-→ **PASO 3:** Ajusta lenguaje según tipo de noticia.
-→ Solo el guion final.`
+        const systemPrompt = getHumanizerSystemPrompt(targetWords)
+        const userPrompt = getHumanizerUserPrompt({
+            region,
+            topicAnchor,
+            cleanedText,
+            transitionPhrase
+        })
 
         // Calcular tokens aproximados
         const inputTokens = Math.ceil((systemPrompt.length + userPrompt.length) / 4)
 
-        const response = await fetchWithRetry(
-            CHUTES_CONFIG.endpoints.chatCompletions,
-            {
-                method: 'POST',
-                headers: getChutesHeaders(),
-                body: JSON.stringify({
-                    model: CHUTES_CONFIG.model,
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userPrompt }
-                    ],
-                    max_tokens: Math.max(600, targetWords * 4),  // ✅ AUMENTADO: más espacio para completar oraciones
-                    temperature: 0.5  // ✅ REDUCIDO de 0.7 a 0.5 para más consistencia
-                })
-            },
-            { retries: 3, backoff: 2000 }  // ✅ Aumentado para evitar 429 en producción
-        )
+        // ✅ MIGRADO A GEMINI AI
+        const geminiResult = await callGeminiAI(systemPrompt, userPrompt, {
+            maxTokens: Math.max(600, targetWords * 4),
+            temperature: 0.5
+        })
 
-        if (!response.ok) {
-            console.warn(`⚠️ Error en Chutes AI: ${response.status}. Usando texto original limpio.`)
+        if (!geminiResult.success || !geminiResult.content) {
+            console.warn(`⚠️ Error en Gemini AI: ${geminiResult.error}. Usando texto original limpio.`)
             return fallbackHumanize(text, transitionPhrase, targetWords)
         }
 
-        const data = await response.json()
-
-        // DEBUG: Ver qué devuelve Chutes
-        if (!data.choices || !data.choices[0]) {
-            console.error('❌ Chutes AI response malformada:', JSON.stringify(data).substring(0, 500))
-        }
-
-        let humanizedContent = data.choices?.[0]?.message?.content?.trim()
+        let humanizedContent = geminiResult.content.trim()
 
         if (!humanizedContent) {
-            console.warn('⚠️ Respuesta vacía de Chutes AI. Usando fallback.')
-            console.warn('   Respuesta recibida:', JSON.stringify(data).substring(0, 300))
+            console.warn('⚠️ Respuesta vacía de Gemini AI. Usando fallback.')
             return fallbackHumanize(text, transitionPhrase, targetWords)
         }
 
@@ -595,27 +555,15 @@ ${transitionPhrase ? `👉 **ARRANCA CON:** "${transitionPhrase}"` : ''}
 → Solo tu versión reducida y corregida, lista para leer al aire.`
 
             try {
-                const reprocessResponse = await fetchWithRetry(
-                    CHUTES_CONFIG.endpoints.chatCompletions,
-                    {
-                        method: 'POST',
-                        headers: getChutesHeaders(),
-                        body: JSON.stringify({
-                            model: CHUTES_CONFIG.model,
-                            messages: [
-                                { role: 'system', content: 'Editor de radio chilena. REDUCE textos para TTS. CERO comas. Máx 14 palabras por oración. No inventes nada.' },
-                                { role: 'user', content: strictPrompt }
-                            ],
-                            max_tokens: Math.min(500, targetWords * 3),  // Espacio suficiente pero controlado
-                            temperature: 0.1  // Muy bajo: fidelidad, no creatividad
-                        })
-                    },
-                    { retries: 2, backoff: 2000 }
+                // ✅ MIGRADO A GEMINI AI
+                const reprocessResult = await callGeminiAI(
+                    'Editor de radio chilena. REDUCE textos para TTS. CERO comas. Máx 14 palabras por oración. No inventes nada.',
+                    strictPrompt,
+                    { maxTokens: Math.min(500, targetWords * 3), temperature: 0.1 }
                 )
 
-                if (reprocessResponse.ok) {
-                    const reprocessData = await reprocessResponse.json()
-                    const reducedContent = reprocessData.choices?.[0]?.message?.content?.trim()
+                if (reprocessResult.success && reprocessResult.content) {
+                    const reducedContent = reprocessResult.content.trim()
 
                     if (reducedContent) {
                         const reducedWordCount = reducedContent.split(' ').length
@@ -627,7 +575,7 @@ ${transitionPhrase ? `👉 **ARRANCA CON:** "${transitionPhrase}"` : ''}
 
                         await logTokenUsage({
                             user_id: userId,
-                            servicio: 'chutes',
+                            servicio: 'chutes' as const,  // ✅ Compatible con tipo existente
                             operacion: 'humanizacion_reprocess',
                             tokens_usados: reprocessTokens,
                             costo: reprocessCost
@@ -661,27 +609,15 @@ ${transitionPhrase ? `👉 **ARRANCA CON:** "${transitionPhrase}"` : ''}
                     targetWords
                 )
 
-                const retryResponse = await fetchWithRetry(
-                    CHUTES_CONFIG.endpoints.chatCompletions,
-                    {
-                        method: 'POST',
-                        headers: getChutesHeaders(),
-                        body: JSON.stringify({
-                            model: CHUTES_CONFIG.model,
-                            messages: [
-                                { role: 'system', content: 'Eres un editor de radio chilena. Corrige textos con repeticiones para TTS.' },
-                                { role: 'user', content: correctivePrompt }
-                            ],
-                            max_tokens: Math.max(600, targetWords * 4),
-                            temperature: 0.7  // Más alto para mayor variación
-                        })
-                    },
-                    { retries: 2, backoff: 2000 }
+                // ✅ MIGRADO A GEMINI AI
+                const retryResult = await callGeminiAI(
+                    'Eres un editor de radio chilena. Corrige textos con repeticiones para TTS.',
+                    correctivePrompt,
+                    { maxTokens: Math.max(600, targetWords * 4), temperature: 0.7 }
                 )
 
-                if (retryResponse.ok) {
-                    const retryData = await retryResponse.json()
-                    const correctedContent = retryData.choices?.[0]?.message?.content?.trim()
+                if (retryResult.success && retryResult.content) {
+                    const correctedContent = retryResult.content.trim()
 
                     if (correctedContent) {
                         // Verificar que la corrección es mejor
@@ -695,7 +631,7 @@ ${transitionPhrase ? `👉 **ARRANCA CON:** "${transitionPhrase}"` : ''}
                             const retryTokens = Math.ceil((correctivePrompt.length + correctedContent.length) / 4)
                             await logTokenUsage({
                                 user_id: userId,
-                                servicio: 'chutes',
+                                servicio: 'chutes' as const,  // ✅ Mantener tipo compatible
                                 operacion: 'humanizacion_anti_repeticion',
                                 tokens_usados: retryTokens,
                                 costo: calculateChutesAICost(retryTokens)

@@ -3,8 +3,7 @@
 import { useState } from 'react'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
-import { Switch } from '@/components/ui/switch'
-import { Settings2, Zap, Radio } from 'lucide-react'
+import { Settings2, Zap } from 'lucide-react'
 
 export interface VoiceConfigSettings {
   speed: number      // -50 a +50
@@ -29,16 +28,8 @@ export function VoiceConfig({ settings, onChange, disabled }: VoiceConfigProps) 
     onChange({ ...settings, pitch: value[0] })
   }
 
-  const handleFmToggle = (enabled: boolean) => {
-    onChange({ ...settings, fmRadioEffect: enabled })
-  }
-
   const handleVolumeChange = (value: number[]) => {
     onChange({ ...settings, volume: value[0] })
-  }
-
-  const handleFmIntensityChange = (value: number[]) => {
-    onChange({ ...settings, fmRadioIntensity: value[0] })
   }
 
   return (
@@ -122,53 +113,15 @@ export function VoiceConfig({ settings, onChange, disabled }: VoiceConfigProps) 
           <span>Más alto</span>
         </div>
       </div>
-
-      {/* Efecto FM Radio */}
-      <div className="space-y-3 pt-2 border-t">
-        <div className="flex items-center justify-between">
-          <Label className="flex items-center gap-2 text-sm">
-            <Radio className="h-4 w-4 text-blue-500" />
-            Efecto FM Radio
-          </Label>
-          <Switch
-            checked={settings.fmRadioEffect}
-            onCheckedChange={handleFmToggle}
-            disabled={disabled}
-          />
-        </div>
-
-        {settings.fmRadioEffect && (
-          <div className="space-y-2 ml-6 animate-in slide-in-from-top-1">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-gray-500">Intensidad</Label>
-              <span className="text-xs font-mono bg-blue-50 px-2 py-1 rounded text-blue-600">
-                {settings.fmRadioIntensity}%
-              </span>
-            </div>
-            <Slider
-              value={[settings.fmRadioIntensity]}
-              onValueChange={handleFmIntensityChange}
-              min={0}
-              max={100}
-              step={5}
-              disabled={disabled}
-              className="w-full"
-            />
-            <p className="text-[10px] text-gray-400">
-              Agrega un efecto sutil de radio FM profesional
-            </p>
-          </div>
-        )}
-      </div>
     </div>
   )
 }
 
-// Default settings - Basados en recomendación de VoiceMaker
+// Default settings - Valores normales (0 = sin ajuste)
 export const defaultVoiceConfig: VoiceConfigSettings = {
-  speed: 1,       // +1% velocidad (recomendación VoiceMaker)
-  pitch: 0,       // Tono natural
-  volume: 2,      // +2dB de volumen
+  speed: 0,       // Velocidad normal
+  pitch: 0,       // Tono normal
+  volume: 0,      // Volumen normal
   fmRadioEffect: false,
-  fmRadioIntensity: 27
+  fmRadioIntensity: 0
 }

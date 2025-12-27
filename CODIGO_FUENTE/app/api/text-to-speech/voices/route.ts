@@ -4,35 +4,42 @@ import { NextResponse } from 'next/server'
 
 export async function GET() {
     try {
-        // ✅ Solo voces VoiceMaker configuradas (Vicente y Eliana)
+        // ✅ Voces Google Cloud TTS Neural2 para es-US (SOLO A, B, C existen)
         // WPM = Palabras Por Minuto BASE (antes de ajuste de velocidad)
-        // Fórmula efectiva: baseWPM × (1 + speed/100) × 0.95
-        const voicemakerVoices = process.env.VOICEMAKER_API_KEY ? [
+        const googleCloudVoices = process.env.GOOGLE_CLOUD_TTS_API_KEY ? [
             {
-                id: 'ai3-es-CL-Vicente',
-                name: '🎙️ Vicente (VoiceMaker)',
-                language: 'es-CL',
-                type: 'voicemaker',
+                id: 'es-US-Neural2-B',
+                name: '🎙️ Carlos (Hombre - Profunda)',
+                language: 'es-US',
+                type: 'google-cloud',
                 isUserVoice: false,
-                wpm: 175,  // WPM base antes de ajuste de velocidad
-                tempo: 4.0,
-                avg_pause_ms: 200,
-                energy_profile: 'news'
+                wpm: 175,
+                ssmlGender: 'MALE',
+                description: 'Voz masculina profunda, ideal para noticias serias'
             },
             {
-                id: 'ai3-es-CL-Eliana',
-                name: '🎙️ Eliana (VoiceMaker)',
-                language: 'es-CL',
-                type: 'voicemaker',
+                id: 'es-US-Neural2-A',
+                name: '🎙️ Sofía (Mujer - Suave)',
+                language: 'es-US',
+                type: 'google-cloud',
                 isUserVoice: false,
-                wpm: 162,  // WPM base (Eliana es ligeramente más pausada)
-                tempo: 4.0,
-                avg_pause_ms: 250,
-                energy_profile: 'news'
+                wpm: 165,
+                ssmlGender: 'FEMALE',
+                description: 'Voz femenina suave, ideal para noticias tranquilas'
+            },
+            {
+                id: 'es-US-Neural2-C',
+                name: '🎙️ Diego (Hombre - Clara)',
+                language: 'es-US',
+                type: 'google-cloud',
+                isUserVoice: false,
+                wpm: 170,
+                ssmlGender: 'MALE',
+                description: 'Voz masculina clara y articulada'
             }
         ] : []
 
-        return NextResponse.json({ voices: voicemakerVoices })
+        return NextResponse.json({ voices: googleCloudVoices })
 
     } catch (error) {
         console.error('Error fetching voices:', error)

@@ -735,9 +735,9 @@ export async function POST(request: NextRequest) {
     // 🎬 Obtener transiciones para integrar en el contenido de cada noticia
     const newsTransitions = getTransitionsForNews(builtScript)
 
-    // Procesar en batches de 2 para evitar rate limiting (429) de Chutes AI
-    const BATCH_SIZE = 2  // Máximo 2 noticias en paralelo (antes: 3, causaba 429)
-    const BATCH_DELAY = 3000  // 3 segundos entre batches para evitar rate limiting
+    // Procesar en batches (Gemini tiene 60 RPM, mucho más que Chutes)
+    const BATCH_SIZE = 4  // 4 noticias en paralelo (Gemini permite más)
+    const BATCH_DELAY = 1000  // 1 segundo entre batches (suficiente para 60 RPM)
 
     console.log(`⚡ === PROCESAMIENTO PARALELO ===`)
     console.log(`   📦 Batch size: ${BATCH_SIZE} | Delay entre batches: ${BATCH_DELAY}ms`)

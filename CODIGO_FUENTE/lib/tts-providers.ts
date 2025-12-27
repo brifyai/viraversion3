@@ -304,33 +304,398 @@ export class LocalTTSProvider implements TTSProvider {
 }
 
 // ============================================================================
-// 2. CHUTES TTS PROVIDER (Fallback Cloud)
+// 3. GOOGLE CLOUD TTS PROVIDER (NEW PRIMARY)
 // ============================================================================
-export class ChutesTTSProvider implements TTSProvider {
-  private apiKey: string;
-  public name: string = 'ChutesTTS';
 
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
+// ============================================================================
+// SSML CONVERSION - Limpieza profunda y optimización para TTS
+// ============================================================================
+
+// Diccionario de símbolos a reemplazar con palabras
+const SYMBOL_REPLACEMENTS: Record<string, string> = {
+  'N°': 'número',
+  'n°': 'número',
+  'Nº': 'número',
+  'nº': 'número',
+  '%': ' por ciento',
+  '(s)': '',
+  '&': ' y ',
+  '+': ' más ',
+  '=': ' igual a ',
+  '°C': ' grados celsius',
+  '°F': ' grados fahrenheit',
+  '°': ' grados',
+  'km/h': 'kilómetros por hora',
+  'Km/h': 'kilómetros por hora',
+  'KM/H': 'kilómetros por hora',
+  'm/s': 'metros por segundo',
+  'UF': 'u-efe',
+  'Kg': 'kilos',
+  'kg': 'kilos',
+  'KG': 'kilos',
+  'mts': 'metros',
+  'Mts': 'metros',
+  'hrs': 'horas',
+  'Hrs': 'horas',
+  'mins': 'minutos',
+  'min': 'minutos',
+  'seg': 'segundos',
+  'aprox': 'aproximadamente',
+  'Aprox': 'aproximadamente',
+  'etc': 'etcétera',
+  'Etc': 'etcétera',
+  'vs': 'versus',
+  'VS': 'versus',
+  'c/u': 'cada uno',
+  'p/': 'para',
+  's/': 'sin',
+  'c/': 'con',
+};
+
+// Lista de siglas conocidas que se leen como palabra (NO deletrear)
+const KNOWN_ACRONYMS = [
+  'PDI', 'SAG', 'SII', 'ISP', 'AFP', 'IVA', 'PIB', 'INE', 'IPC',
+  'ONU', 'FBI', 'CIA', 'NASA', 'UEFA', 'FIFA', 'NBA', 'NFL',
+  'CEO', 'COO', 'CFO', 'CTO', 'URL', 'USB', 'GPS', 'LED', 'LCD',
+  'COVID', 'SIDA', 'VIH', 'ADN', 'RUT', 'UDI', 'PPD',
+  'EEUU', 'OMS', 'OIT', 'BID', 'FMI', 'BCE', 'UE',
+  'OS', 'MP', 'RN', 'PS', 'DC', 'PC', 'FA', 'RD',
+  'CAE', 'BRP', 'CVE', 'SML', 'UTM', 'APV',
+  'SAE', 'PSU', 'PAES', 'NEM', 'PTU',
+  'INP', 'ISL', 'CMF', 'SVS', 'UAF', 'SEC',
+  'AES', 'ABS', 'ESP', 'SUV', 'VAN', 'SUB',
+  'CNN', 'BBC', 'TVN', 'CHV', 'T13'
+];
+
+// Palabras comunes en mayúsculas que NO deben procesarse como siglas
+const COMMON_UPPERCASE_WORDS = [
+  'EL', 'LA', 'LOS', 'LAS', 'DE', 'EN', 'CON', 'POR', 'PARA', 'UN', 'UNA',
+  'QUE', 'SE', 'ES', 'AL', 'DEL', 'MAS', 'MÁS', 'SU', 'SUS', 'NO', 'SI', 'SÍ',
+  'YA', 'LE', 'LO', 'ME', 'MI', 'TU', 'TE', 'NOS', 'LES', 'SER', 'VER',
+  'IR', 'DAR', 'HAY', 'HOY', 'AÚN', 'AUN', 'ASÍ', 'ASI', 'TAL', 'TAN'
+];
+
+/**
+ * Convierte texto plano a SSML optimizado para Google Cloud TTS
+ * - Limpia formato Markdown
+ * - Reemplaza símbolos con palabras
+ * - Agrega pausas naturales con etiquetas <s>
+ * - Procesa siglas inteligentemente
+ * - Soporta <prosody> para noticias destacadas
+ */
+export function textToSSML(text: string, isHighlighted: boolean = false): string {
+  let cleaned = text;
+
+  // 1. Limpieza profunda de Markdown y símbolos decorativos
+  cleaned = cleaned
+    .replace(/\*\*([^*]+)\*\*/g, '$1')      // **Negritas**
+    .replace(/\*([^*]+)\*/g, '$1')           // *Cursivas*
+    .replace(/__([^_]+)__/g, '$1')           // __Subrayado__
+    .replace(/_([^_]+)_/g, '$1')             // _Cursivas_
+    .replace(/#{1,6}\s*/g, '')               // # Headers
+    .replace(/^[-*+]\s+/gm, '')              // - Listas
+    .replace(/^\d+\.\s+/gm, '')              // 1. Listas numeradas
+    .replace(/`([^`]+)`/g, '$1')             // `Código inline`
+    .replace(/```[\s\S]*?```/g, '')          // ```Bloques de código```
+    .replace(/---+/g, '')                    // --- Líneas horizontales
+    .replace(/===+/g, '')                    // === Líneas dobles
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // [Links](url)
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '')  // ![Imágenes](url)
+    .replace(/\*+/g, '')                     // Asteriscos sueltos
+    .replace(/#+/g, '')                      // Almohadillas sueltas
+    .replace(/_{2,}/g, '')                   // Guiones bajos decorativos
+    .replace(/~{2,}/g, '')                   // ~~Tachado~~
+    .replace(/>/g, '')                       // > Citas
+    .replace(/\|/g, ', ')                    // | Tablas
+    .replace(/\\/g, '')                      // Escapes
+    .replace(/\[\s*\]/g, '')                 // [] Checkboxes vacías
+    .replace(/\[x\]/gi, '')                  // [x] Checkboxes marcadas
+    .replace(/:\w+:/g, '');                  // :emoji:
+
+  // 2. Reemplazar símbolos con palabras (ordenar por longitud descendente)
+  const sortedSymbols = Object.entries(SYMBOL_REPLACEMENTS)
+    .sort((a, b) => b[0].length - a[0].length);
+
+  for (const [symbol, replacement] of sortedSymbols) {
+    const escapedSymbol = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    cleaned = cleaned.replace(new RegExp(escapedSymbol, 'g'), replacement);
+  }
+
+  // 3. Limpiar números con formato de miles (155.772 → 155772)
+  cleaned = cleaned.replace(/(\d)\.(\d{3})(?!\d)/g, '$1$2');
+
+  // 4. Limpiar espacios múltiples
+  cleaned = cleaned.replace(/\s+/g, ' ').replace(/\n+/g, ' ').replace(/\r+/g, '').trim();
+
+  // 5. Procesar por oraciones con etiquetas <s> (best practice de Google)
+  const sentences = cleaned.split(/(?<=[.!?])\s+/);
+  let ssmlBody = '';
+
+  for (const sentence of sentences) {
+    if (!sentence.trim()) continue;
+
+    let processedSentence = sentence;
+
+    // 6. Procesar siglas (2-4 letras mayúsculas consecutivas)
+    processedSentence = processedSentence.replace(/\b([A-ZÁÉÍÓÚÑ]{2,4})\b/g, (match) => {
+      if (COMMON_UPPERCASE_WORDS.includes(match)) return match;
+      if (KNOWN_ACRONYMS.includes(match)) return match;
+      return `<say-as interpret-as="characters">${match}</say-as>`;
+    });
+
+    // 7. Agregar pausas por comas (250ms)
+    processedSentence = processedSentence.replace(/,\s+/g, ', <break time="250ms"/> ');
+
+    // 8. Envolver oración en <s> con pausa al final
+    let pauseTime = '600ms';
+    if (sentence.endsWith('?') || sentence.endsWith('!')) pauseTime = '700ms';
+
+    ssmlBody += `<s>${processedSentence.trim()}</s><break time="${pauseTime}"/> `;
+  }
+
+  // 9. Aplicar <prosody> si es noticia destacada (intro, outro, o es_destacada)
+  if (isHighlighted) {
+    ssmlBody = `<prosody rate="medium" pitch="+1st">${ssmlBody}</prosody>`;
+  }
+
+  return `<speak>${ssmlBody}</speak>`;
+}
+
+export const GOOGLE_CLOUD_VOICES = {
+  // ===========================
+  // VOCES NEURAL2 ESPAÑOL US (Latinoamericanas - Recomendadas)
+  // ===========================
+  'es-US-Neural2-A': {
+    id: 'es-US-Neural2-A',
+    name: 'Sofía (Mujer - Suave)',
+    languageCode: 'es-US',
+    ssmlGender: 'FEMALE',
+    wpm: 165,
+    description: 'Voz femenina suave, ideal para noticias tranquilas'
+  },
+  'es-US-Neural2-B': {
+    id: 'es-US-Neural2-B',
+    name: 'Carlos (Hombre - Profunda)',
+    languageCode: 'es-US',
+    ssmlGender: 'MALE',
+    wpm: 175,
+    description: 'Voz masculina profunda, ideal para noticias serias'
+  },
+  'es-US-Neural2-C': {
+    id: 'es-US-Neural2-C',
+    name: 'Diego (Hombre - Clara)',
+    languageCode: 'es-US',
+    ssmlGender: 'MALE',
+    wpm: 170,
+    description: 'Voz masculina clara y articulada'
+  },
+  'es-US-Neural2-D': {
+    id: 'es-US-Neural2-D',
+    name: 'Miguel (Hombre - Noticiosa)',
+    languageCode: 'es-US',
+    ssmlGender: 'MALE',
+    wpm: 175,
+    description: 'Voz masculina estilo noticiero profesional'
+  },
+  'es-US-Neural2-E': {
+    id: 'es-US-Neural2-E',
+    name: 'Laura (Mujer - Dinámica)',
+    languageCode: 'es-US',
+    ssmlGender: 'FEMALE',
+    wpm: 170,
+    description: 'Voz femenina dinámica y expresiva'
+  },
+  'es-US-Neural2-F': {
+    id: 'es-US-Neural2-F',
+    name: 'Ana (Mujer - Calmada)',
+    languageCode: 'es-US',
+    ssmlGender: 'FEMALE',
+    wpm: 160,
+    description: 'Voz femenina tranquila y relajante'
+  },
+
+  // ===========================
+  // ALIASES PARA COMPATIBILIDAD (mapeo desde VoiceMaker)
+  // ===========================
+  'MALE_CL': {
+    id: 'es-US-Neural2-B',
+    name: 'Vicente → Carlos (Hombre)',
+    languageCode: 'es-US',
+    ssmlGender: 'MALE',
+    wpm: 175,
+    description: 'Alias: Vicente de VoiceMaker → Carlos de Google Cloud'
+  },
+  'FEMALE_CL': {
+    id: 'es-US-Neural2-A',
+    name: 'Eliana → Sofía (Mujer)',
+    languageCode: 'es-US',
+    ssmlGender: 'FEMALE',
+    wpm: 165,
+    description: 'Alias: Eliana de VoiceMaker → Sofía de Google Cloud'
+  }
+};
+
+export class GoogleCloudTTSProvider implements TTSProvider {
+  private apiKey: string;
+  private baseUrl = 'https://texttospeech.googleapis.com/v1/text:synthesize';
+  public name = 'GoogleCloudTTS';
+
+  constructor(apiKey?: string) {
+    this.apiKey = apiKey || process.env.GOOGLE_CLOUD_TTS_API_KEY || '';
   }
 
   async synthesize(text: string, options?: any): Promise<TTSResponse> {
-    // Implementación básica de Chutes si fuera necesaria como backup
-    // Por ahora placeholder para cumplir la interfaz
-    throw new Error("Chutes TTS no implementado completamente aún. Usar LocalTTS.");
+    try {
+      console.log(`[GoogleCloudTTS] Generando audio para: "${text.substring(0, 50)}..."`);
+
+      // Mapear voiceId de VoiceMaker a Google Cloud
+      const voiceId = this.mapVoiceId(options?.voiceId || options?.voice);
+      const languageCode = voiceId.split('-').slice(0, 2).join('-');
+
+      // Convertir texto a SSML con limpieza profunda
+      const ssmlContent = textToSSML(text);
+      console.log(`[GoogleCloudTTS] SSML generado: "${ssmlContent.substring(0, 100)}..."`);
+
+      // Determinar pitch según el género de la voz
+      // Masculino: -2.0 (más grave y con autoridad)
+      // Femenino: -1.0 (quita lo chillón sin perder calidez)
+      const voiceConfig = Object.values(GOOGLE_CLOUD_VOICES).find(v => v.id === voiceId);
+      const isFemaleVoice = voiceConfig?.ssmlGender === 'FEMALE' ||
+        voiceId.includes('Neural2-A') ||
+        voiceId.includes('Neural2-E') ||
+        voiceId.includes('Neural2-F');
+      const basePitch = isFemaleVoice ? -1.0 : -2.0;
+
+      // Permitir override del pitch desde options, pero usar basePitch como default
+      const finalPitch = options?.pitch !== undefined ? options.pitch : basePitch;
+
+      const requestBody = {
+        input: { ssml: ssmlContent },
+        voice: {
+          languageCode,
+          name: voiceId
+        },
+        audioConfig: {
+          audioEncoding: 'MP3',
+          sampleRateHertz: 24000,  // Calidad óptima para voz
+          speakingRate: 1.0 + ((options?.speed || 0) / 100),
+          pitch: finalPitch,
+          // Perfil de audio optimizado para reducir tonos metálicos
+          effectsProfileId: ['medium-bluetooth-speaker-class-device']
+        }
+      };
+
+      console.log(`[GoogleCloudTTS] Using voice: ${voiceId}, language: ${languageCode}, pitch: ${finalPitch}, gender: ${isFemaleVoice ? 'female' : 'male'}`);
+
+      const response = await fetch(`${this.baseUrl}?key=${this.apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Google Cloud TTS API Error (${response.status}): ${errorText}`);
+      }
+
+      const data = await response.json();
+
+      if (!data.audioContent) {
+        throw new Error('Google Cloud TTS returned no audio content');
+      }
+
+      // Decodificar Base64 a ArrayBuffer
+      const binaryString = atob(data.audioContent);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const audioBuffer = bytes.buffer;
+
+      // Estimar duración basado en WPM
+      const wordCount = text.split(/\s+/).length;
+      const wpm = this.getVoiceWPM(voiceId);
+      const estimatedDuration = Math.round((wordCount / wpm) * 60);
+
+      console.log(`[GoogleCloudTTS] ✅ Audio generado: ${audioBuffer.byteLength} bytes, ~${estimatedDuration}s, pitch: ${finalPitch}`);
+
+      return {
+        audioData: audioBuffer,
+        format: 'mp3',
+        duration: estimatedDuration,
+        cost: (text.length / 1000000) * 16, // Neural2: $16 per 1M chars
+        success: true,
+        provider: 'google-cloud-tts',
+        voice: voiceId
+      };
+
+    } catch (error) {
+      console.error('[GoogleCloudTTS] Error:', error);
+      throw error;
+    }
+  }
+
+  private mapVoiceId(voiceId?: string): string {
+    // Si no hay voiceId, usar voz masculina por defecto
+    if (!voiceId) return 'es-US-Neural2-B';
+
+    // Si ya es un ID de Google Cloud válido, usarlo directamente
+    if (voiceId.startsWith('es-') && voiceId.includes('Neural2')) {
+      return voiceId;
+    }
+
+    // Mapear voces de VoiceMaker a Google Cloud
+    if (voiceId.includes('Vicente') || voiceId.includes('ai3-es-CL-Vicente')) {
+      return 'es-US-Neural2-B'; // Carlos
+    }
+    if (voiceId.includes('Eliana') || voiceId.includes('ai3-es-CL-Eliana')) {
+      return 'es-US-Neural2-A'; // Sofía
+    }
+    if (voiceId.includes('MALE')) {
+      return 'es-US-Neural2-B';
+    }
+    if (voiceId.includes('FEMALE')) {
+      return 'es-US-Neural2-A';
+    }
+
+    // Default: Carlos (Hombre)
+    return 'es-US-Neural2-B';
+  }
+
+  private getVoiceWPM(voiceId: string): number {
+    const voice = Object.values(GOOGLE_CLOUD_VOICES).find(v => v.id === voiceId);
+    return voice?.wpm || 170;
   }
 
   async validateConfig(): Promise<boolean> {
-    return !!this.apiKey;
+    if (!this.apiKey) {
+      console.warn('[GoogleCloudTTS] API Key no configurada');
+      return false;
+    }
+    // Podríamos hacer un test call pero por ahora solo verificamos la key
+    return true;
+  }
+
+  async listVoices(): Promise<any[]> {
+    return Object.values(GOOGLE_CLOUD_VOICES);
   }
 }
 
 // ============================================================================
-// FACTORY
+// FACTORY (UPDATED - Google Cloud TTS as Primary)
 // ============================================================================
 export class TTSProviderFactory {
-  static getProvider(type: 'voicemaker' | 'local' | 'chutes' = 'voicemaker'): TTSProvider {
-    // PRIORIDAD 1: VoiceMaker (Cloud API - Principal)
+  static getProvider(type: 'google-cloud' | 'voicemaker' | 'local' | 'chutes' = 'google-cloud'): TTSProvider {
+    // PRIORIDAD 1: Google Cloud TTS (NEW PRIMARY)
+    if (type === 'google-cloud') {
+      const apiKey = process.env.GOOGLE_CLOUD_TTS_API_KEY || '';
+      if (apiKey) {
+        return new GoogleCloudTTSProvider(apiKey);
+      }
+      console.warn('[TTSFactory] Google Cloud TTS API key no configurada');
+    }
+
+    // PRIORIDAD 2: VoiceMaker (Legacy - fallback)
     if (type === 'voicemaker') {
       const apiKey = process.env.VOICEMAKER_API_KEY || '';
       if (apiKey) {
@@ -339,18 +704,17 @@ export class TTSProviderFactory {
       console.warn('[TTSFactory] VoiceMaker API key no configurada');
     }
 
-    // PRIORIDAD 2: Local TTS (Legacy - fallback)
+    // PRIORIDAD 3: Local TTS (Legacy - fallback)
     if (type === 'local') {
       return new LocalTTSProvider();
     }
 
-    // PRIORIDAD 3: Chutes (si se solicita explícitamente)
-    if (type === 'chutes') {
-      const apiKey = process.env.CHUTES_API_KEY || '';
-      return new ChutesTTSProvider(apiKey);
+    // Default: Google Cloud si hay key, sino VoiceMaker, sino Local
+    const googleKey = process.env.GOOGLE_CLOUD_TTS_API_KEY || '';
+    if (googleKey) {
+      return new GoogleCloudTTSProvider(googleKey);
     }
 
-    // Default: VoiceMaker si hay API key, sino Local
     const voicemakerKey = process.env.VOICEMAKER_API_KEY || '';
     if (voicemakerKey) {
       return new VoiceMakerTTSProvider(voicemakerKey);
@@ -359,8 +723,12 @@ export class TTSProviderFactory {
     return new LocalTTSProvider();
   }
 
-  // Helper for route.ts compatibility - ahora usa VoiceMaker primero
+  // Helper for route.ts compatibility - now uses Google Cloud first
   static getBestProvider(): TTSProvider {
+    const googleKey = process.env.GOOGLE_CLOUD_TTS_API_KEY || '';
+    if (googleKey) {
+      return new GoogleCloudTTSProvider(googleKey);
+    }
     const voicemakerKey = process.env.VOICEMAKER_API_KEY || '';
     if (voicemakerKey) {
       return new VoiceMakerTTSProvider(voicemakerKey);
@@ -370,6 +738,14 @@ export class TTSProviderFactory {
 
   static getAvailableProviders(): any[] {
     const providers = [];
+
+    if (process.env.GOOGLE_CLOUD_TTS_API_KEY) {
+      providers.push({
+        name: 'GoogleCloudTTS',
+        isConfigured: () => true,
+        estimateCost: (chars: number) => chars * 0.000016 // Neural2 pricing
+      });
+    }
 
     if (process.env.VOICEMAKER_API_KEY) {
       providers.push({
@@ -386,10 +762,11 @@ export class TTSProviderFactory {
 
   static getAllProviders(): any[] {
     return [
+      { name: 'GoogleCloudTTS' },
       { name: 'VoiceMaker' },
-      { name: 'LocalTTS' },
-      { name: 'ChutesTTS' }
+      { name: 'LocalTTS' }
     ];
   }
 }
+
 
