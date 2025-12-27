@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 
 export async function GET() {
     try {
-        // ✅ Voces Google Cloud TTS Neural2 para es-US (SOLO A, B, C existen)
+        // ✅ Voces Google Cloud TTS Neural2 para es-US (6 voces disponibles)
         // WPM = Palabras Por Minuto BASE (antes de ajuste de velocidad)
         const googleCloudVoices = process.env.GOOGLE_CLOUD_TTS_API_KEY ? [
             {
@@ -36,6 +36,36 @@ export async function GET() {
                 wpm: 170,
                 ssmlGender: 'MALE',
                 description: 'Voz masculina clara y articulada'
+            },
+            {
+                id: 'es-US-Neural2-D',
+                name: '🎙️ Miguel (Hombre - Noticiosa)',
+                language: 'es-US',
+                type: 'google-cloud',
+                isUserVoice: false,
+                wpm: 175,
+                ssmlGender: 'MALE',
+                description: 'Voz masculina estilo noticiero profesional'
+            },
+            {
+                id: 'es-US-Neural2-E',
+                name: '🎙️ Laura (Mujer - Dinámica)',
+                language: 'es-US',
+                type: 'google-cloud',
+                isUserVoice: false,
+                wpm: 170,
+                ssmlGender: 'FEMALE',
+                description: 'Voz femenina dinámica y expresiva'
+            },
+            {
+                id: 'es-US-Neural2-F',
+                name: '🎙️ Ana (Mujer - Calmada)',
+                language: 'es-US',
+                type: 'google-cloud',
+                isUserVoice: false,
+                wpm: 160,
+                ssmlGender: 'FEMALE',
+                description: 'Voz femenina tranquila y relajante'
             }
         ] : []
 

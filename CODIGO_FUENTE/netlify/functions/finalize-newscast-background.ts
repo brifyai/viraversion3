@@ -294,17 +294,20 @@ async function generateTTSAudio(
         const data = await response.json()
 
         if (data.audioContent) {
-            const wordCount = text.split(/\s+/).length
-            const effectiveWPM = voiceConfig.wpm * (speakingRate / (voiceConfig.wpm / 150))
-            const estimatedDuration = Math.round((wordCount / effectiveWPM) * 60)
-
             const audioBuffer = Buffer.from(data.audioContent, 'base64')
-            console.log(`   ✅ Audio Pro: ${audioBuffer.length} bytes, ~${estimatedDuration}s, pitch=${finalPitch}`)
+
+            // ✅ CÁLCULO REAL DE DURACIÓN basado en tamaño de MP3
+            // Google Cloud TTS genera MP3 a ~48kbps (6000 bytes/segundo) @ 24kHz sample rate
+            // Fórmula: duración = tamaño_bytes / bytes_por_segundo
+            const BYTES_PER_SECOND = 6000  // 48kbps = 6KB/s
+            const realDuration = Math.round(audioBuffer.length / BYTES_PER_SECOND)
+
+            console.log(`   ✅ Audio Pro: ${audioBuffer.length} bytes, ${realDuration}s REAL, pitch=${finalPitch}`)
 
             return {
                 success: true,
                 audioData: audioBuffer,
-                duration: estimatedDuration
+                duration: realDuration
             }
         } else {
             return { success: false, error: 'TTS: no audioContent in response' }

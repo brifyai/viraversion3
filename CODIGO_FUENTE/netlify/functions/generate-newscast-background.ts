@@ -631,15 +631,11 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
     console.log('🔍 Verificando variables de entorno...')
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-    const chutesKey = process.env.CHUTES_API_KEY
-    const chutesUrl = process.env.CHUTES_CHAT_COMPLETIONS_URL
-    const voicemakerKey = process.env.VOICEMAKER_API_KEY
+    const googleTtsKey = process.env.GOOGLE_CLOUD_TTS_API_KEY
 
     console.log(`   SUPABASE_URL: ${supabaseUrl ? '✅ OK (' + supabaseUrl.substring(0, 30) + '...)' : '❌ FALTA'}`)
     console.log(`   SUPABASE_KEY: ${supabaseKey ? '✅ OK (' + supabaseKey.substring(0, 10) + '...)' : '❌ FALTA'}`)
-    console.log(`   CHUTES_KEY: ${chutesKey ? '✅ OK' : '❌ FALTA'}`)
-    console.log(`   CHUTES_URL: ${chutesUrl ? '✅ OK' : '⚠️ Usando default'}`)
-    console.log(`   VOICEMAKER_KEY: ${voicemakerKey ? '✅ OK' : '⚠️ No configurado'}`)
+    console.log(`   GOOGLE_TTS_KEY: ${googleTtsKey ? '✅ OK' : '❌ FALTA'}`)
     console.log(`   Total env vars: ${Object.keys(process.env).length}`)
 
     if (!supabaseUrl || !supabaseKey) {
@@ -716,8 +712,8 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
 
         // WPM calibrado - igual que en route.ts
         // Fórmula: voiceBaseWPM * (1 + speed/100) * CORRECTION_FACTOR
-        // ✅ AJUSTADO: Factor de 0.92 porque audio real es ~3-4% más largo que estimado
-        const CORRECTION_FACTOR = 0.89  // Calibrado: 157 WPM real medido
+        // ✅ Factor 0.85 compensa speakingRate dinámico (1.17 para Carlos) + pausas SSML
+        const CORRECTION_FACTOR = 0.85
         const voiceBaseWPM = voiceWPM || 175
         const speedAdjustment = 1 + ((voiceSettings?.speed ?? 0) / 100)
         const effectiveWPM = Math.round(voiceBaseWPM * speedAdjustment * CORRECTION_FACTOR)
