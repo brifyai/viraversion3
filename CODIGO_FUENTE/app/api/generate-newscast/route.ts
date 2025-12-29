@@ -1,4 +1,4 @@
-import { logTokenUsage, calculateChutesAICost } from '@/lib/usage-logger'
+import { logTokenUsage, calculateGeminiAICost } from '@/lib/usage-logger'
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseSession, supabaseAdmin } from '@/lib/supabase-server'
 // getCurrentUser y getResourceOwnerId ya no se usan - usamos userId cacheado al inicio
@@ -1029,10 +1029,10 @@ NO uses corchetes, emojis ni caracteres especiales. El texto debe quedar listo p
 
           // Registrar tokens
           const cierreTokens = Math.ceil((cierrePrompt.length + cierreExtendido.length) / 4)
-          const cierreCost = calculateChutesAICost(cierreTokens)
+          const cierreCost = calculateGeminiAICost(cierreTokens)
           await logTokenUsage({
             user_id: userId,
-            servicio: 'chutes',
+            servicio: 'gemini',
             operacion: 'cierre_extendido',
             tokens_usados: cierreTokens,
             costo: cierreCost

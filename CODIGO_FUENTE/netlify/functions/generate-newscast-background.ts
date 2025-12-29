@@ -47,6 +47,36 @@ const TIMING_CONSTANTS = {
     SILENCE_BETWEEN_NEWS: 1.5
 }
 
+// ============================================================
+// SSML DURATION ESTIMATION
+// ============================================================
+/**
+ * Estima duración de audio considerando pausas SSML
+ * - Oraciones (. ): 600ms
+ * - Preguntas/Exclamaciones (? !): 700ms
+ * - Comas: 250ms
+ */
+function estimarDuracionConSSML(texto: string, wpm: number): number {
+    // 1. Duración base por palabras
+    const palabras = texto.trim().split(/\s+/).length
+    const duracionBaseSeg = (palabras / wpm) * 60
+
+    // 2. Contar puntuación para estimar pausas SSML
+    const oracionesNormales = (texto.match(/\./g) || []).length
+    const preguntasExclamaciones = (texto.match(/[?!]/g) || []).length
+    const comas = (texto.match(/,/g) || []).length
+
+    // 3. Calcular pausas SSML (valores exactos del código textToSSML)
+    const pausasOraciones = oracionesNormales * 0.6
+    const pausasPregExcl = preguntasExclamaciones * 0.7
+    const pausasComas = comas * 0.25
+
+    // 4. Total + 3% margen
+    const duracionTotal = (duracionBaseSeg + pausasOraciones + pausasPregExcl + pausasComas) * 1.03
+
+    return Math.round(duracionTotal)
+}
+
 // Gemini tiene 60 RPM (más que Chutes)
 const BATCH_SIZE = 4
 const BATCH_DELAY = 1000
@@ -934,7 +964,7 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
                     )
 
                     const wordCount = humanizedContent.split(/\s+/).length
-                    const duration = Math.ceil((wordCount / effectiveWPM) * 60)
+                    const duration = estimarDuracionConSSML(humanizedContent, effectiveWPM)
 
                     return {
                         index,
@@ -956,7 +986,7 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
                         humanizedContent: fallbackContent,
                         success: false,
                         wordCount,
-                        duration: Math.ceil((wordCount / effectiveWPM) * 60),
+                        duration: estimarDuracionConSSML(fallbackContent, effectiveWPM),
                         sourceText
                     }
                 }

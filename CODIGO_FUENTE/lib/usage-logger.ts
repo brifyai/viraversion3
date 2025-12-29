@@ -5,7 +5,7 @@ import { supabase } from './supabase'
  */
 interface TokenUsage {
     user_id?: string
-    servicio: 'chutes' | 'abacus' | 'groq' | 'openai' | 'elevenlabs' | 'azure' | 'local-tts'
+    servicio: 'chutes' | 'abacus' | 'groq' | 'openai' | 'elevenlabs' | 'azure' | 'local-tts' | 'gemini' | 'google-cloud-tts'
     operacion: 'humanizacion' | 'humanizacion_reprocess' | 'humanizacion_anti_repeticion' | 'cierre_extendido' | 'procesamiento_texto' | 'tts' | 'scraping' | 'audio_placement' | 'director'
     tokens_usados: number
     costo: number
@@ -50,6 +50,18 @@ export function calculateChutesAICost(totalTokens: number): number {
 }
 
 /**
+ * Calcula el costo de tokens para Gemini AI (Google)
+ * Modelo: gemini-1.5-flash (free tier hasta 15 RPM, luego pricing)
+ * Pricing: $0.075/1M input tokens, $0.30/1M output tokens
+ * Usamos un promedio aproximado de $0.15/1M tokens
+ */
+export function calculateGeminiAICost(totalTokens: number): number {
+    // Costo promedio (input+output): ~$0.15 por 1M tokens
+    const costPerMillionTokens = 0.15
+    return (totalTokens / 1_000_000) * costPerMillionTokens
+}
+
+/**
  * Calcula el costo de tokens para Abacus AI
  */
 export function calculateAbacusAICost(totalTokens: number, model: string = 'gpt-4.1-mini'): number {
@@ -71,6 +83,19 @@ export function calculateGroqCost(totalTokens: number): number {
     // Groq es muy económico: $0.10 por 1M tokens
     const costPerMillionTokens = 0.10
     return (totalTokens / 1_000_000) * costPerMillionTokens
+}
+
+/**
+ * Calcula el costo de Google Cloud TTS
+ * Modelo: Neural2 voices (es-US-Neural2-X)
+ * Pricing: $16.00 por 1M caracteres
+ * @param characters Número de caracteres procesados
+ * @returns Costo en USD
+ */
+export function calculateGoogleTTSCost(characters: number): number {
+    // Google Cloud TTS Neural2: $16.00 por 1M caracteres
+    const costPerMillionChars = 16.00
+    return (characters / 1_000_000) * costPerMillionChars
 }
 
 /**

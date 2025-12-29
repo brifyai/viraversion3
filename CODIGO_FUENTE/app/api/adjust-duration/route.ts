@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseSession, supabaseAdmin } from '@/lib/supabase-server'
 import { CHUTES_CONFIG, getChutesHeaders } from '@/lib/chutes-config'
-import { logTokenUsage, calculateChutesAICost } from '@/lib/usage-logger'
+import { logTokenUsage, calculateGeminiAICost } from '@/lib/usage-logger'
 
 const supabase = supabaseAdmin
 
@@ -216,18 +216,18 @@ export async function POST(request: NextRequest) {
 
         // 5. Registrar uso de tokens
         if (totalTokensUsed > 0) {
-            const cost = calculateChutesAICost(totalTokensUsed)
+            const cost = calculateGeminiAICost(totalTokensUsed)
 
             await logTokenUsage({
                 user_id: session.user.id,
-                servicio: 'chutes',
+                servicio: 'gemini',
                 operacion: 'procesamiento_texto',
                 tokens_usados: totalTokensUsed,
                 costo: cost,
                 metadata: {
                     newscast_id: newscastId,
                     target_duration: targetDuration,
-                    model: CHUTES_CONFIG.model
+                    model: 'gemini-1.5-flash'
                 }
             })
         }

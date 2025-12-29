@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { TTSProvider, TTSRequest, TTSResponse } from './types';
+import { logTokenUsage, calculateGoogleTTSCost } from './usage-logger';
 
 // ============================================================================
 // TIMING CONSTANTS - Para cálculos de duración

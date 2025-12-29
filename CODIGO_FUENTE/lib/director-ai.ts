@@ -7,7 +7,7 @@
 // - Ubicación de cortinas y publicidad
 // ==================================================
 
-import { logTokenUsage, calculateChutesAICost } from './usage-logger'
+import { logTokenUsage, calculateGeminiAICost } from './usage-logger'
 import { GEMINI_CONFIG, getGeminiUrl, parseGeminiResponse } from './gemini-config'
 import { fetchWithRetry } from './utils'
 import { getDirectorPrompt } from './prompts'
@@ -170,11 +170,11 @@ Responde con este JSON exacto:
         const inputTokens = Math.ceil((DIRECTOR_SYSTEM_PROMPT.length + userPrompt.length) / 4)
         const outputTokens = Math.ceil((content?.length || 0) / 4)
         const totalTokens = inputTokens + outputTokens
-        const cost = calculateChutesAICost(totalTokens)
+        const cost = calculateGeminiAICost(totalTokens)
 
         await logTokenUsage({
             user_id: userId,
-            servicio: 'chutes' as const,  // ✅ Compatible con tipo existente
+            servicio: 'gemini' as const,
             operacion: 'director',
             tokens_usados: totalTokens,
             costo: cost,

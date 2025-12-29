@@ -5,7 +5,7 @@
 // para ser leído por TTS (Text-to-Speech)
 // ==================================================
 
-import { logTokenUsage, calculateChutesAICost } from './usage-logger'
+import { logTokenUsage, calculateGeminiAICost } from './usage-logger'
 import { GEMINI_CONFIG, getGeminiUrl, buildGeminiRequestBody, parseGeminiResponse } from './gemini-config'
 import { fetchWithRetry } from './utils'
 import { detectRepetitions, buildCorrectivePrompt, type RepetitionAnalysis } from './text-validation'
@@ -571,11 +571,11 @@ export async function humanizeText(
 
                         // Registrar tokens extra del re-procesamiento
                         const reprocessTokens = Math.ceil((strictPrompt.length + reducedContent.length) / 4)
-                        const reprocessCost = calculateChutesAICost(reprocessTokens)
+                        const reprocessCost = calculateGeminiAICost(reprocessTokens)
 
                         await logTokenUsage({
                             user_id: userId,
-                            servicio: 'chutes' as const,  // ✅ Compatible con tipo existente
+                            servicio: 'gemini' as const,
                             operacion: 'humanizacion_reprocess',
                             tokens_usados: reprocessTokens,
                             costo: reprocessCost
@@ -631,10 +631,10 @@ export async function humanizeText(
                             const retryTokens = Math.ceil((correctivePrompt.length + correctedContent.length) / 4)
                             await logTokenUsage({
                                 user_id: userId,
-                                servicio: 'chutes' as const,  // ✅ Mantener tipo compatible
+                                servicio: 'gemini' as const,
                                 operacion: 'humanizacion_anti_repeticion',
                                 tokens_usados: retryTokens,
-                                costo: calculateChutesAICost(retryTokens)
+                                costo: calculateGeminiAICost(retryTokens)
                             })
                         } else {
                             console.warn(`   ⚠️ Corrección no mejoró (score: ${retryAnalysis.score}), manteniendo original`)
@@ -652,12 +652,12 @@ export async function humanizeText(
         // Calcular tokens de salida
         const outputTokens = Math.ceil(humanizedContent.length / 4)
         const totalTokens = inputTokens + outputTokens
-        const cost = calculateChutesAICost(totalTokens)
+        const cost = calculateGeminiAICost(totalTokens)
 
         // Registrar uso
         await logTokenUsage({
             user_id: userId,
-            servicio: 'chutes',
+            servicio: 'gemini',
             operacion: 'humanizacion',
             tokens_usados: totalTokens,
             costo: cost

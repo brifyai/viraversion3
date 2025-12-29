@@ -1,7 +1,7 @@
 
 import { fetchWithRetry } from '@/lib/utils'
 import { NextRequest, NextResponse } from 'next/server'
-import { logTokenUsage, calculateAbacusAICost, calculateGroqCost, calculateChutesAICost } from '@/lib/usage-logger'
+import { logTokenUsage, calculateAbacusAICost, calculateGroqCost, calculateGeminiAICost } from '@/lib/usage-logger'
 import { CHUTES_CONFIG, getChutesHeaders } from '@/lib/chutes-config'
 
 export async function POST(request: NextRequest) {
@@ -144,7 +144,7 @@ ${content}`
       let cost = 0
 
       if (provider === 'chutes') {
-        cost = calculateChutesAICost(tokensUsed)
+        cost = calculateGeminiAICost(tokensUsed)
       } else if (provider === 'groq') {
         cost = calculateGroqCost(tokensUsed)
       } else {

@@ -8,7 +8,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { GEMINI_CONFIG, getGeminiUrl, parseGeminiResponse } from './gemini-config'
-import { logTokenUsage, calculateChutesAICost } from './usage-logger'
+import { logTokenUsage, calculateGeminiAICost } from './usage-logger'
 import { fetchWithRetry } from './utils'
 
 const supabase = createClient(
@@ -241,13 +241,13 @@ export async function decideAudioPlacements(
 
         // Calcular tokens usados (estimación)
         const tokensUsed = Math.ceil((prompt.length + content.length) / 4)
-        const cost = calculateChutesAICost(tokensUsed)
+        const cost = calculateGeminiAICost(tokensUsed)
 
         // Registrar uso de tokens
         if (tokensUsed > 0) {
             await logTokenUsage({
                 user_id: userId,
-                servicio: 'chutes' as const,  // ✅ Compatible con tipo existente
+                servicio: 'gemini' as const,
                 operacion: 'audio_placement',
                 tokens_usados: tokensUsed,
                 costo: cost,

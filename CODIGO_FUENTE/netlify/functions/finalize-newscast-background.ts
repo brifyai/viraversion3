@@ -71,18 +71,12 @@ function sanitizeTextForTTS(text: string): string {
 // ============================================================
 
 // Configuración de voces Neural2 para es-US
+// WPM CALIBRADOS: Sincronizados con tts-providers.ts (2024-12-29)
+// Solo 3 voces en producción: Sofía, Carlos, Diego
 const VOICE_CONFIG: Record<string, { id: string; wpm: number; ssmlGender: 'MALE' | 'FEMALE' }> = {
-    'es-US-Neural2-A': { id: 'es-US-Neural2-A', wpm: 152, ssmlGender: 'FEMALE' },  // AJUSTADO SSML
-    'es-US-Neural2-B': { id: 'es-US-Neural2-B', wpm: 157, ssmlGender: 'MALE' },    // AJUSTADO SSML
-    'es-US-Neural2-C': { id: 'es-US-Neural2-C', wpm: 166, ssmlGender: 'MALE' },    // AJUSTADO SSML
-    'es-US-Neural2-D': { id: 'es-US-Neural2-D', wpm: 167, ssmlGender: 'MALE' },
-    'es-US-Neural2-E': { id: 'es-US-Neural2-E', wpm: 162, ssmlGender: 'FEMALE' },
-    'es-US-Neural2-F': { id: 'es-US-Neural2-F', wpm: 160, ssmlGender: 'FEMALE' },
-    // Aliases para compatibilidad
-    'ai3-es-CL-Vicente': { id: 'es-US-Neural2-B', wpm: 167, ssmlGender: 'MALE' },
-    'ai3-es-CL-Eliana': { id: 'es-US-Neural2-A', wpm: 162, ssmlGender: 'FEMALE' },
-    'MALE_CL': { id: 'es-US-Neural2-B', wpm: 167, ssmlGender: 'MALE' },
-    'FEMALE_CL': { id: 'es-US-Neural2-A', wpm: 162, ssmlGender: 'FEMALE' },
+    'es-US-Neural2-A': { id: 'es-US-Neural2-A', wpm: 152, ssmlGender: 'FEMALE' },  // Sofía
+    'es-US-Neural2-B': { id: 'es-US-Neural2-B', wpm: 157, ssmlGender: 'MALE' },    // Carlos
+    'es-US-Neural2-C': { id: 'es-US-Neural2-C', wpm: 166, ssmlGender: 'MALE' },    // Diego
 }
 
 // Diccionario de símbolos a reemplazar con palabras
@@ -417,6 +411,31 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
                 item.duration = ttsResult.duration
                 generatedCount++
                 console.log(`   ✅ Audio OK: ${ttsResult.duration}s`)
+
+                // Registrar uso de TTS en la base de datos
+                const characters = item.content?.length || 0
+                const ttsCost = (characters / 1_000_000) * 16 // $16/1M chars Neural2
+
+                await supabase
+                    .from('uso_tokens')
+                    .insert({
+                        user_id: noticiero.user_id,
+                        servicio: 'google-cloud-tts',
+                        operacion: 'tts',
+                        tokens_usados: characters,
+                        costo: ttsCost,
+                        moneda: 'USD',
+                        metadata: {
+                            voice: item.voiceId || globalVoiceId,
+                            duration_seconds: ttsResult.duration,
+                            audio_bytes: ttsResult.audioData.length,
+                            item_type: item.type,
+                            newscast_id: newscastId
+                        },
+                        created_at: new Date().toISOString()
+                    })
+
+                console.log(`   📊 TTS logged: ${characters} chars, ${ttsCost.toFixed(6)}`)
             } else {
                 console.error(`   ❌ Error: ${ttsResult.error}`)
             }
