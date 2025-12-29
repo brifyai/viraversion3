@@ -201,8 +201,8 @@ export function textToSSML(text: string, isHighlighted: boolean = false): string
 
 // ============================================================================
 // GOOGLE CLOUD TTS - VOCES NEURAL2
-// NOTA: Los WPM son valores nominales. La corrección por speakingRate 0.9
-// se aplica en CORRECTION_FACTOR de generate-newscast/route.ts
+// WPM CALIBRADOS: Valores reales medidos con 100 palabras @ speakingRate=1.0
+// Fecha calibración: 2024-12-27
 // ============================================================================
 export const GOOGLE_CLOUD_VOICES = {
   'es-US-Neural2-A': {
@@ -210,7 +210,7 @@ export const GOOGLE_CLOUD_VOICES = {
     name: 'Sofía (Mujer - Suave)',
     languageCode: 'es-US',
     ssmlGender: 'FEMALE',
-    wpm: 165,
+    wpm: 152,  // CALIBRADO 2024-12-27 + ajuste SSML (157 * 0.94)
     description: 'Voz femenina suave, ideal para noticias tranquilas'
   },
   'es-US-Neural2-B': {
@@ -218,7 +218,7 @@ export const GOOGLE_CLOUD_VOICES = {
     name: 'Carlos (Hombre - Profunda)',
     languageCode: 'es-US',
     ssmlGender: 'MALE',
-    wpm: 175,
+    wpm: 157,  // CALIBRADO 2024-12-27 + ajuste SSML (288s/306s)
     description: 'Voz masculina profunda, ideal para noticias serias'
   },
   'es-US-Neural2-C': {
@@ -226,7 +226,7 @@ export const GOOGLE_CLOUD_VOICES = {
     name: 'Diego (Hombre - Clara)',
     languageCode: 'es-US',
     ssmlGender: 'MALE',
-    wpm: 170,
+    wpm: 166,  // CALIBRADO 2024-12-27 + ajuste SSML (176 * 0.94)
     description: 'Voz masculina clara y articulada'
   },
   'es-US-Neural2-D': {
@@ -296,13 +296,10 @@ export class GoogleCloudTTSProvider implements TTSProvider {
         audioConfig: {
           audioEncoding: 'MP3',
           sampleRateHertz: 24000,
-          // speakingRate dinámico: basado en WPM de la voz o explícito
-          // - Si viene options.speakingRate, usarlo directamente
-          // - Si no, calcular: wpm/150 (ej: Carlos 175 WPM → rate 1.17)
-          // - El usuario puede ajustar con options.speed (-10 a +10)
-          speakingRate: options?.speakingRate
-            ? options.speakingRate + ((options?.speed || 0) / 100)
-            : ((voiceConfig?.wpm || 170) / 150) + ((options?.speed || 0) / 100),
+          // speakingRate = 1.0 base (velocidad normal de Google TTS)
+          // Los WPM ya están calibrados reales, no se necesita fórmula
+          // El usuario puede ajustar con options.speed (-10 a +10)
+          speakingRate: 1.0 + ((options?.speed || 0) / 100),
           pitch: finalPitch,
           effectsProfileId: ['medium-bluetooth-speaker-class-device']
         }

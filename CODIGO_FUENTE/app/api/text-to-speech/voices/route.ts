@@ -13,7 +13,7 @@ export async function GET() {
                 language: 'es-US',
                 type: 'google-cloud',
                 isUserVoice: false,
-                wpm: 175,
+                wpm: 157,  // AJUSTADO con pausas SSML (288s/306s)
                 ssmlGender: 'MALE',
                 description: 'Voz masculina profunda, ideal para noticias serias'
             },
@@ -23,7 +23,7 @@ export async function GET() {
                 language: 'es-US',
                 type: 'google-cloud',
                 isUserVoice: false,
-                wpm: 165,
+                wpm: 152,  // AJUSTADO con pausas SSML
                 ssmlGender: 'FEMALE',
                 description: 'Voz femenina suave, ideal para noticias tranquilas'
             },
@@ -33,7 +33,7 @@ export async function GET() {
                 language: 'es-US',
                 type: 'google-cloud',
                 isUserVoice: false,
-                wpm: 170,
+                wpm: 166,  // AJUSTADO con pausas SSML
                 ssmlGender: 'MALE',
                 description: 'Voz masculina clara y articulada'
             },

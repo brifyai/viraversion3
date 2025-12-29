@@ -710,10 +710,9 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
             }
         } = config
 
-        // WPM calibrado - igual que en route.ts
-        // Fórmula: voiceBaseWPM * (1 + speed/100) * CORRECTION_FACTOR
-        // ✅ Factor 0.85 compensa speakingRate dinámico (1.17 para Carlos) + pausas SSML
-        const CORRECTION_FACTOR = 0.85
+        // WPM calibrado - WPM ya están calibrados reales
+        // 2024-12-27: Factor 1.0, no se necesita corrección adicional
+        const CORRECTION_FACTOR = 1.0
         const voiceBaseWPM = voiceWPM || 175
         const speedAdjustment = 1 + ((voiceSettings?.speed ?? 0) / 100)
         const effectiveWPM = Math.round(voiceBaseWPM * speedAdjustment * CORRECTION_FACTOR)

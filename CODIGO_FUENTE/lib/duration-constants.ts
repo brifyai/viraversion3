@@ -12,10 +12,10 @@
 // - 0.81: Audio 10% corto
 // - 0.90: Audio 12% largo  
 // - 0.82: Objetivo actual (reducir audio largo)
-// Factor de corrección: compensa speakingRate dinámico (wpm/150) + pausas SSML
-// Carlos 175 WPM → rate 1.17 (17% más rápido) → necesita factor 0.85
-// Fórmula: 175 × 0.85 = ~149 WPM efectivos para estimación
-export const CORRECTION_FACTOR = 0.85
+// Factor de corrección: 1.0 porque los WPM ya están calibrados reales
+// No se necesita corrección adicional
+// Calibración: 2024-12-27 (Sofía=162, Carlos=167, Diego=176)
+export const CORRECTION_FACTOR = 1.0
 
 // Duraciones fijas de segmentos (en segundos)
 export const INTRO_DURATION = 12      // Intro con hora + clima

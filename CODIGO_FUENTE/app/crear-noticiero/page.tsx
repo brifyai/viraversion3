@@ -81,7 +81,7 @@ export default function CrearNoticiero() {
   const [totalAdDuration, setTotalAdDuration] = useState(0)  // ✅ NUEVO: Duración total real de ads en segundos
   const [generateAudio, setGenerateAudio] = useState(false)  // Toggle para generar audio en finalize
   const [selectedVoice, setSelectedVoice] = useState('es-US-Neural2-B')  // ✅ Google Cloud: Carlos (Hombre)
-  const [voiceWPM, setVoiceWPM] = useState(175)  // WPM base de Carlos
+  const [voiceWPM, setVoiceWPM] = useState(157)  // WPM ajustado con pausas SSML
   const [voiceConfig, setVoiceConfig] = useState<VoiceConfigSettings>(defaultVoiceConfig)
   const [timeStrategy, setTimeStrategy] = useState('auto')
   const [scheduledTime, setScheduledTime] = useState('08:00')  // Hora programada para el noticiero

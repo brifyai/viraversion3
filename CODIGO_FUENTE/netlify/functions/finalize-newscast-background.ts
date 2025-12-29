@@ -72,17 +72,17 @@ function sanitizeTextForTTS(text: string): string {
 
 // Configuración de voces Neural2 para es-US
 const VOICE_CONFIG: Record<string, { id: string; wpm: number; ssmlGender: 'MALE' | 'FEMALE' }> = {
-    'es-US-Neural2-A': { id: 'es-US-Neural2-A', wpm: 165, ssmlGender: 'FEMALE' },
-    'es-US-Neural2-B': { id: 'es-US-Neural2-B', wpm: 175, ssmlGender: 'MALE' },
-    'es-US-Neural2-C': { id: 'es-US-Neural2-C', wpm: 170, ssmlGender: 'MALE' },
-    'es-US-Neural2-D': { id: 'es-US-Neural2-D', wpm: 175, ssmlGender: 'MALE' },
-    'es-US-Neural2-E': { id: 'es-US-Neural2-E', wpm: 170, ssmlGender: 'FEMALE' },
+    'es-US-Neural2-A': { id: 'es-US-Neural2-A', wpm: 152, ssmlGender: 'FEMALE' },  // AJUSTADO SSML
+    'es-US-Neural2-B': { id: 'es-US-Neural2-B', wpm: 157, ssmlGender: 'MALE' },    // AJUSTADO SSML
+    'es-US-Neural2-C': { id: 'es-US-Neural2-C', wpm: 166, ssmlGender: 'MALE' },    // AJUSTADO SSML
+    'es-US-Neural2-D': { id: 'es-US-Neural2-D', wpm: 167, ssmlGender: 'MALE' },
+    'es-US-Neural2-E': { id: 'es-US-Neural2-E', wpm: 162, ssmlGender: 'FEMALE' },
     'es-US-Neural2-F': { id: 'es-US-Neural2-F', wpm: 160, ssmlGender: 'FEMALE' },
-    // Aliases para compatibilidad con VoiceMaker (legacy)
-    'ai3-es-CL-Vicente': { id: 'es-US-Neural2-B', wpm: 175, ssmlGender: 'MALE' },
-    'ai3-es-CL-Eliana': { id: 'es-US-Neural2-A', wpm: 165, ssmlGender: 'FEMALE' },
-    'MALE_CL': { id: 'es-US-Neural2-B', wpm: 175, ssmlGender: 'MALE' },
-    'FEMALE_CL': { id: 'es-US-Neural2-A', wpm: 165, ssmlGender: 'FEMALE' },
+    // Aliases para compatibilidad
+    'ai3-es-CL-Vicente': { id: 'es-US-Neural2-B', wpm: 167, ssmlGender: 'MALE' },
+    'ai3-es-CL-Eliana': { id: 'es-US-Neural2-A', wpm: 162, ssmlGender: 'FEMALE' },
+    'MALE_CL': { id: 'es-US-Neural2-B', wpm: 167, ssmlGender: 'MALE' },
+    'FEMALE_CL': { id: 'es-US-Neural2-A', wpm: 162, ssmlGender: 'FEMALE' },
 }
 
 // Diccionario de símbolos a reemplazar con palabras
@@ -219,10 +219,11 @@ function textToSSML(text: string, isHighlighted: boolean = false): string {
 }
 
 /**
- * Calcula speakingRate basado en WPM
+ * speakingRate = 1.0 base + ajuste del usuario
+ * WPM ya calibrados, no se necesita fórmula wpm/150
  */
 function calculateSpeakingRate(wpm: number, userAdjust: number = 0): number {
-    const baseRate = wpm / 150
+    const baseRate = 1.0  // Velocidad normal de Google TTS
     const adjusted = baseRate + (userAdjust / 100)
     return Math.max(0.25, Math.min(4.0, adjusted))
 }
@@ -297,9 +298,9 @@ async function generateTTSAudio(
             const audioBuffer = Buffer.from(data.audioContent, 'base64')
 
             // ✅ CÁLCULO REAL DE DURACIÓN basado en tamaño de MP3
-            // Google Cloud TTS genera MP3 a ~48kbps (6000 bytes/segundo) @ 24kHz sample rate
+            // Google Cloud TTS @ 24kHz: calibrado con datos reales (3.9MB/527s)
             // Fórmula: duración = tamaño_bytes / bytes_por_segundo
-            const BYTES_PER_SECOND = 6000  // 48kbps = 6KB/s
+            const BYTES_PER_SECOND = 7500  // Calibrado 2024-12-27
             const realDuration = Math.round(audioBuffer.length / BYTES_PER_SECOND)
 
             console.log(`   ✅ Audio Pro: ${audioBuffer.length} bytes, ${realDuration}s REAL, pitch=${finalPitch}`)
