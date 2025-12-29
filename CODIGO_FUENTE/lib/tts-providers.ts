@@ -19,81 +19,53 @@ export const TIMING_CONSTANTS = {
 // SSML CONVERSION - Limpieza profunda y optimización para TTS
 // ============================================================================
 
-// Diccionario de símbolos a reemplazar con palabras
-const SYMBOL_REPLACEMENTS: Record<string, string> = {
-  // Variantes del símbolo número (crítico - evita "ene grado")
-  'N°': 'número ',
-  'n°': 'número ',
-  'Nº': 'número ',
-  'nº': 'número ',
-  'N.°': 'número ',
-  'n.°': 'número ',
-  'No.': 'número ',
-  'no.': 'número ',
-  'N º': 'número ',
-  // Porcentajes
+// Diccionario de símbolos seguros (se pueden reemplazar globalmente)
+const SAFE_SYMBOLS: Record<string, string> = {
   '%': ' por ciento',
-  // Conectores
   '&': ' y ',
   '+': ' más ',
   '=': ' igual a ',
-  // Temperaturas (antes de ° solo)
   '°C': ' grados celsius',
   '°F': ' grados fahrenheit',
   '°': ' grados',
-  // Unidades
-  'km/h': 'kilómetros por hora',
-  'Km/h': 'kilómetros por hora',
-  'KM/H': 'kilómetros por hora',
+  '|': ', ',
+  '/': ' por '
+};
+
+// Diccionario de abreviaturas (REQUIEREN límite de palabra \b para no romper "Ministro")
+// NOTA: 'min' y 'seg' fueron removidos de aquí para evitar conflictos con Ministro/Según/Segundos
+// Se manejan con seguridad en el código o se asume que 'min' suelto es minutos.
+const ABBREVIATIONS: Record<string, string> = {
+  'N°': 'número', 'n°': 'número', 'Nº': 'número', 'nº': 'número', 'No.': 'número',
+  'km/h': 'kilómetros por hora', 'Km/h': 'kilómetros por hora',
   'm/s': 'metros por segundo',
-  'Kg': 'kilos',
-  'kg': 'kilos',
-  'KG': 'kilos',
-  'mts': 'metros',
-  'Mts': 'metros',
-  'hrs': 'horas',
-  'Hrs': 'horas',
-  'mins': 'minutos',
-  'min': 'minutos',
-  'seg': 'segundos',
-  // Abreviaturas
-  'aprox': 'aproximadamente',
-  'Aprox': 'aproximadamente',
-  'etc': 'etcétera',
-  'Etc': 'etcétera',
-  'vs': 'versus',
-  'VS': 'versus',
+  'Kg': 'kilos', 'kg': 'kilos', 'KG': 'kilos',
+  'mts': 'metros', 'Mts': 'metros',
+  'hrs': 'horas', 'Hrs': 'horas',
+  'aprox': 'aproximadamente', 'Aprox': 'aproximadamente',
+  'etc': 'etcétera', 'Etc': 'etcétera',
+  'vs': 'versus', 'VS': 'versus',
   'c/u': 'cada uno',
-  'p/': 'para',
-  's/': 'sin',
-  'c/': 'con',
-  '(s)': '',
+  'p/': 'para', 's/': 'sin', 'c/': 'con',
+  '(s)': ''
 };
 
 // Siglas que DEBEN deletrearse (para sonar profesional en radio)
-// Ej: SII → "ese-i-i", PDI → "pe-de-i"
 const SPELL_ACRONYMS = [
-  // Instituciones Chile
   'SII', 'PDI', 'SAG', 'ISP', 'INE', 'CMF', 'SVS', 'UAF', 'SEC', 'ISL', 'INP',
-  // Económicos
   'UF', 'UTM', 'IPC', 'PIB', 'IVA', 'AFP', 'APV', 'CAE', 'SML', 'BRP', 'CVE',
-  // Educación
   'PSU', 'SAE', 'NEM', 'PTU',
-  // Partidos políticos
   'UDI', 'PPD', 'RN', 'PS', 'DC', 'PC', 'FA', 'RD',
-  // Tecnología
   'URL', 'USB', 'GPS', 'LED', 'LCD', 'CEO', 'CFO', 'CTO',
-  // Internacionales
   'ONU', 'OMS', 'OIT', 'BID', 'FMI', 'BCE', 'UE', 'FBI', 'CIA',
-  // Medios
   'CNN', 'BBC', 'TVN', 'CHV'
 ];
 
 // Siglas que se leen como PALABRA (no deletrear)
-// Ej: NASA → "nasa", COVID → "covid", FIFA → "fifa"
+// EEUU eliminado de aquí porque se reemplazará por "Estados Unidos"
 const READ_AS_WORD_ACRONYMS = [
   'NASA', 'UEFA', 'FIFA', 'NBA', 'NFL', 'COVID', 'SIDA', 'PAES',
-  'VIH', 'ADN', 'RUT', 'EEUU', 'ABS', 'ESP', 'SUV', 'VAN', 'SUB'
+  'VIH', 'ADN', 'RUT', 'ABS', 'ESP', 'SUV', 'VAN', 'SUB'
 ];
 
 // Palabras comunes en mayúsculas que NO deben procesarse como siglas
@@ -107,7 +79,7 @@ const COMMON_UPPERCASE_WORDS = [
 /**
  * Convierte texto plano a SSML optimizado para Google Cloud TTS
  * - Limpia formato Markdown
- * - Reemplaza símbolos con palabras
+ * - Reemplaza símbolos con palabras (Moneda, Unidades)
  * - Agrega pausas naturales con etiquetas <s>
  * - Procesa siglas inteligentemente
  * - Soporta <prosody> para noticias destacadas
@@ -115,47 +87,69 @@ const COMMON_UPPERCASE_WORDS = [
 export function textToSSML(text: string, isHighlighted: boolean = false): string {
   let cleaned = text;
 
-  // 0. LIMPIEZA CRÍTICA PRIMERO - Eliminar absolutamente TODO formato
-  // Esto es lo primero para evitar que se lean asteriscos
+  // 0. LIMPIEZA CRÍTICA PRIMERO
   cleaned = cleaned
-    .replace(/\*/g, '')                       // TODOS los asteriscos
-    .replace(/#/g, '')                        // TODAS las almohadillas
-    .replace(/_{2,}/g, '')                    // Guiones bajos decorativos
-    .replace(/~{2,}/g, '');                   // Tildes de tachado
+    .replace(/\*/g, '')
+    .replace(/#/g, '')
+    .replace(/_{2,}/g, '')
+    .replace(/~{2,}/g, '');
 
-  // 1. Limpieza de Markdown estructurado
+  // 1. Limpieza de Markdown
   cleaned = cleaned
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // [Links](url)
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '')   // ![Imágenes](url)
-    .replace(/`([^`]+)`/g, '$1')              // `Código inline`
-    .replace(/```[\s\S]*?```/g, '')           // ```Bloques de código```
-    .replace(/---+/g, '')                     // --- Líneas horizontales
-    .replace(/===+/g, '')                     // === Líneas dobles
-    .replace(/^[-+]\s+/gm, '')                // - Listas (sin asterisco, ya eliminado)
-    .replace(/^\d+\.\s+/gm, '')               // 1. Listas numeradas
-    .replace(/>/g, '')                        // > Citas
-    .replace(/\|/g, ', ')                     // | Tablas
-    .replace(/\\/g, '')                       // Escapes
-    .replace(/\[\s*\]/g, '')                  // [] Checkboxes vacías
-    .replace(/\[x\]/gi, '')                   // [x] Checkboxes marcadas
-    .replace(/:\w+:/g, '');                   // :emoji:
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/---+/g, '')
+    .replace(/===+/g, '')
+    .replace(/^[-+]\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/>/g, '')
+    .replace(/\|/g, ', ')
+    .replace(/\\/g, '')
+    .replace(/\[\s*\]/g, '')
+    .replace(/\[x\]/gi, '')
+    .replace(/:\w+:/g, '');
 
-  // 2. Reemplazar símbolos con palabras (ordenar por longitud descendente)
-  const sortedSymbols = Object.entries(SYMBOL_REPLACEMENTS)
-    .sort((a, b) => b[0].length - a[0].length);
+  // 2. CORRECCIONES FONÉTICAS ESPECÍFICAS (Manuales)
+  // Expandir EEUU antes de que se procese como sigla
+  cleaned = cleaned
+    .replace(/\bEE\.?UU\.?\b/g, 'Estados Unidos')
+    .replace(/\bEEUU\b/g, 'Estados Unidos');
 
-  for (const [symbol, replacement] of sortedSymbols) {
+  // 3. MONEDA LOCALIZADA ($ -> pesos al final)
+  // Transforma "$ 500.000" o "$500.000" -> "500.000 pesos"
+  cleaned = cleaned.replace(/\$\s?(\d[\d\.]*)/g, '$1 pesos');
+
+  // 4. Reemplazo de SÍMBOLOS SEGUROS
+  for (const [symbol, replacement] of Object.entries(SAFE_SYMBOLS)) {
     const escapedSymbol = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     cleaned = cleaned.replace(new RegExp(escapedSymbol, 'g'), replacement);
   }
 
-  // 3. Limpiar números con formato de miles (155.772 → 155772)
+  // 5. Reemplazo de ABREVIATURAS con LÍMITE DE PALABRA (\b)
+  // Esto evita que "min" reemplace "Ministro" o "seg" reemplace "Según"
+  const sortedAbbrs = Object.entries(ABBREVIATIONS).sort((a, b) => b[0].length - a[0].length);
+
+  for (const [abbr, replacement] of sortedAbbrs) {
+    const escapedAbbr = abbr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // Si termina en punto (ej: "No."), el punto delimita. Si no, usamos \b.
+    if (abbr.endsWith('.')) {
+      cleaned = cleaned.replace(new RegExp(`\\b${escapedAbbr}(?=\\s|$)`, 'gi'), replacement);
+    } else {
+      cleaned = cleaned.replace(new RegExp(`\\b${escapedAbbr}\\b`, 'gi'), replacement);
+    }
+  }
+
+  // 6. Limpiar números con formato de miles (155.772 → 155772)
+  // Neural2 lee mejor los números enteros sin puntos
   cleaned = cleaned.replace(/(\d)\.(\d{3})(?!\d)/g, '$1$2');
 
-  // 4. Limpiar espacios múltiples
+  // 7. Limpiar espacios múltiples y saltos
   cleaned = cleaned.replace(/\s+/g, ' ').replace(/\n+/g, ' ').replace(/\r+/g, '').trim();
 
-  // 5. Procesar por oraciones con etiquetas <s> (best practice de Google)
+  // 8. Procesar por oraciones
   const sentences = cleaned.split(/(?<=[.!?])\s+/);
   let ssmlBody = '';
 
@@ -164,35 +158,28 @@ export function textToSSML(text: string, isHighlighted: boolean = false): string
 
     let processedSentence = sentence;
 
-    // 6. Procesar siglas (2-5 letras mayúsculas consecutivas)
+    // 9. Procesar siglas (2-5 letras mayúsculas)
     processedSentence = processedSentence.replace(/\b([A-ZÁÉÍÓÚÑ]{2,5})\b/g, (match) => {
-      // Palabras comunes - no tocar
       if (COMMON_UPPERCASE_WORDS.includes(match)) return match;
-      // Siglas que se leen como palabra (FIFA, NASA) - no tocar
       if (READ_AS_WORD_ACRONYMS.includes(match)) return match;
-      // Siglas que DEBEN deletrearse (SII, PDI, UF) - usar SSML
       if (SPELL_ACRONYMS.includes(match)) {
         return `<say-as interpret-as="characters">${match}</say-as>`;
       }
-      // Por defecto: deletrear siglas desconocidas de 2-3 letras
+      // Deletrear siglas cortas desconocidas por defecto
       if (match.length <= 3) {
         return `<say-as interpret-as="characters">${match}</say-as>`;
       }
-      // Siglas de 4-5 letras desconocidas: dejar como palabra
       return match;
     });
 
-    // 7. Agregar pausas por comas (250ms)
+    // 10. Pausas
     processedSentence = processedSentence.replace(/,\s+/g, ', <break time="250ms"/> ');
-
-    // 8. Envolver oración en <s> con pausa al final
     let pauseTime = '600ms';
     if (sentence.endsWith('?') || sentence.endsWith('!')) pauseTime = '700ms';
 
     ssmlBody += `<s>${processedSentence.trim()}</s><break time="${pauseTime}"/> `;
   }
 
-  // 9. Aplicar <prosody> si es noticia destacada (intro, outro, o es_destacada)
   if (isHighlighted) {
     ssmlBody = `<prosody rate="medium" pitch="+1st">${ssmlBody}</prosody>`;
   }
@@ -378,6 +365,7 @@ export class GoogleCloudTTSProvider implements TTSProvider {
     if (!this.apiKey) {
       console.warn('[GoogleCloudTTS] API Key no configurada');
       return false;
+
     }
     return true;
   }

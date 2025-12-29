@@ -52,4 +52,7 @@ export const VOICE_WPM = {
     'es-US-Neural2-A': 152,  // Sofía
     'es-US-Neural2-B': 157,  // Carlos
     'es-US-Neural2-C': 166,  // Diego
+    'es-US-Neural2-D': 175,  // Miguel
+    'es-US-Neural2-E': 170,  // Laura
+    'es-US-Neural2-F': 160,  // Ana
 };

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { CHUTES_CONFIG, getChutesHeaders } from './lib/chutes-config'
+import { callGemini } from './lib/gemini-config'
 import {
     getDirectorPrompt,
     getHumanizerSystemPrompt,
@@ -213,61 +213,48 @@ async function planificarNoticiero(
     })
 
     try {
-        const response = await fetch(CHUTES_CONFIG.endpoints.chatCompletions, {
-            method: 'POST',
-            headers: getChutesHeaders(),
-            body: JSON.stringify({
-                model: CHUTES_CONFIG.model,
-                messages: [{ role: 'user', content: DIRECTOR_PROMPT }],
-                max_tokens: 1200,
-                temperature: 0.3
-            })
-        })
+        const result = await callGemini(DIRECTOR_PROMPT, 1200, 0.3)
 
-        if (response.ok) {
-            const data = await response.json()
-            const content = data.choices?.[0]?.message?.content?.trim()
-            if (content) {
-                const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-                const plan = JSON.parse(cleanContent)
+        if (result) {
+            const cleanContent = result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+            const plan = JSON.parse(cleanContent)
 
-                // Asegurar todas las noticias estén incluidas
-                const idsEnPlan = new Set(plan.noticias.map((n: any) => n.id))
-                let maxOrden = Math.max(...plan.noticias.map((n: any) => n.orden), 0)
+            // Asegurar todas las noticias estén incluidas
+            const idsEnPlan = new Set(plan.noticias.map((n: any) => n.id))
+            let maxOrden = Math.max(...plan.noticias.map((n: any) => n.orden), 0)
 
-                for (const noticia of noticias) {
-                    if (!idsEnPlan.has(noticia.id)) {
-                        maxOrden++
-                        plan.noticias.push({
-                            id: noticia.id,
-                            orden: maxOrden,
-                            palabras_objetivo: palabrasPorNoticia,
-                            es_destacada: false
-                        })
-                    }
-                }
-
-                console.log(`✅ Plan IA generado: ${plan.noticias.length} noticias`)
-
-                // Agregar inserciones de publicidad
-                const inserciones: any[] = []
-                if (publicidades.length > 0) {
-                    const intervalo = Math.floor(noticias.length / (publicidades.length + 1))
-                    publicidades.forEach((pub: any, i: number) => {
-                        inserciones.push({
-                            despues_de_orden: (i + 1) * intervalo,
-                            tipo: 'publicidad',
-                            publicidad_id: pub.id,
-                            duracion_segundos: pub.duracion_segundos || 25
-                        })
+            for (const noticia of noticias) {
+                if (!idsEnPlan.has(noticia.id)) {
+                    maxOrden++
+                    plan.noticias.push({
+                        id: noticia.id,
+                        orden: maxOrden,
+                        palabras_objetivo: palabrasPorNoticia,
+                        es_destacada: false
                     })
                 }
+            }
 
-                return {
-                    noticias: plan.noticias.sort((a: any, b: any) => a.orden - b.orden),
-                    inserciones,
-                    duracion_total_estimada: duracionObjetivo
-                }
+            console.log(`✅ Plan IA generado: ${plan.noticias.length} noticias`)
+
+            // Agregar inserciones de publicidad
+            const inserciones: any[] = []
+            if (publicidades.length > 0) {
+                const intervalo = Math.floor(noticias.length / (publicidades.length + 1))
+                publicidades.forEach((pub: any, i: number) => {
+                    inserciones.push({
+                        despues_de_orden: (i + 1) * intervalo,
+                        tipo: 'publicidad',
+                        publicidad_id: pub.id,
+                        duracion_segundos: pub.duracion_segundos || 25
+                    })
+                })
+            }
+
+            return {
+                noticias: plan.noticias.sort((a: any, b: any) => a.orden - b.orden),
+                inserciones,
+                duracion_total_estimada: duracionObjetivo
             }
         }
     } catch (error) {
@@ -374,127 +361,66 @@ async function humanizeText(
         transitionPhrase
     })
 
-    // Reintentar con backoff exponencial para errores 429
+    // Combinar prompts para Gemini (no tiene mensajes system/user separados)
+    const fullPrompt = `${systemPrompt}\n\n${userPrompt}`
+
+    // Reintentar con backoff exponencial
     const MAX_RETRIES = 3
-    const BASE_DELAY = 2000  // 2 segundos base
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        try {
-            const response = await fetch(CHUTES_CONFIG.endpoints.chatCompletions, {
-                method: 'POST',
-                headers: getChutesHeaders(),
-                body: JSON.stringify({
-                    model: CHUTES_CONFIG.model,
-                    messages: [
-                        { role: 'system', content: systemPrompt },
-                        { role: 'user', content: userPrompt }
-                    ],
-                    max_tokens: Math.max(500, targetWords * 4),
-                    temperature: 0.5
-                })
-            })
+        const result = await callGemini(fullPrompt, Math.max(500, targetWords * 4), 0.5)
 
-            if (response.status === 429) {
-                if (attempt < MAX_RETRIES) {
-                    const delay = BASE_DELAY * Math.pow(2, attempt) // 2s, 4s, 8s
-                    console.log(`   🔄 Rate limit (429), reintentando en ${delay / 1000}s... (${attempt + 1}/${MAX_RETRIES})`)
-                    await new Promise(resolve => setTimeout(resolve, delay))
-                    continue
-                }
-                console.warn(`⚠️ Chutes AI error: 429 después de ${MAX_RETRIES} reintentos`)
-                return { content: cleanedText.substring(0, 500), success: false }
+        if (!result) {
+            if (attempt < MAX_RETRIES) {
+                const delay = 2000 * Math.pow(2, attempt)
+                console.log(`   🔄 Gemini retry en ${delay / 1000}s... (${attempt + 1}/${MAX_RETRIES})`)
+                await new Promise(resolve => setTimeout(resolve, delay))
+                continue
             }
-
-            if (!response.ok) {
-                console.warn(`⚠️ Chutes AI error: ${response.status}`)
-                return { content: cleanedText.substring(0, 500), success: false }
-            }
-
-            const data = await response.json()
-            let content = data.choices?.[0]?.message?.content?.trim()
-
-            if (!content) {
-                return { content: cleanedText.substring(0, 500), success: false }
-            }
-
-            const wordCount = content.split(/\s+/).length
-
-            // Si excede el objetivo por más del 20%, usar prompt de reducción
-            if (wordCount > targetWords * 1.2) {
-                console.log(`   ⚠️ Exceso: ${wordCount}/${targetWords} palabras, solicitando reducción...`)
-
-                // Usar prompt centralizado - extraer tema del primer párrafo
-                const reductionTopic = content.split(/[.!?]/)[0]?.substring(0, 100) || 'noticia'
-                const reducePrompt = getReductionPrompt({ wordCount, targetWords, content, reductionTopic })
-
-                const reduceResponse = await fetch(CHUTES_CONFIG.endpoints.chatCompletions, {
-                    method: 'POST',
-                    headers: getChutesHeaders(),
-                    body: JSON.stringify({
-                        model: CHUTES_CONFIG.model,
-                        messages: [{ role: 'user', content: reducePrompt }],
-                        max_tokens: targetWords * 3,
-                        temperature: 0.3
-                    })
-                })
-
-                if (reduceResponse.ok) {
-                    const reduceData = await reduceResponse.json()
-                    const reducedContent = reduceData.choices?.[0]?.message?.content?.trim()
-                    if (reducedContent) {
-                        content = reducedContent
-                        console.log(`   ✅ Reducido: ${reducedContent.split(/\s+/).length} palabras`)
-                    }
-                }
-            }
-
-            // ANTI-REPETICIÓN: Detectar y corregir repeticiones
-            const repetitionAnalysis = detectRepetitions(content)
-
-            if (!repetitionAnalysis.isValid) {
-                console.log(`   ⚠️ Repeticiones detectadas (score: ${repetitionAnalysis.score})`)
-
-                // Intentar corregir con prompt correctivo
-                const correctivePrompt = buildCorrectivePrompt(repetitionAnalysis.issues, content, targetWords)
-
-                const retryResponse = await fetch(CHUTES_CONFIG.endpoints.chatCompletions, {
-                    method: 'POST',
-                    headers: getChutesHeaders(),
-                    body: JSON.stringify({
-                        model: CHUTES_CONFIG.model,
-                        messages: [
-                            { role: 'system', content: ANTI_REPETITION_SYSTEM },
-                            { role: 'user', content: correctivePrompt }
-                        ],
-                        max_tokens: Math.max(600, targetWords * 4),
-                        temperature: 0.7
-                    })
-                })
-
-                if (retryResponse.ok) {
-                    const retryData = await retryResponse.json()
-                    const correctedContent = retryData.choices?.[0]?.message?.content?.trim()
-
-                    if (correctedContent) {
-                        const retryAnalysis = detectRepetitions(correctedContent)
-
-                        if (retryAnalysis.score > repetitionAnalysis.score) {
-                            console.log(`   ✅ Corrección anti-repetición: score ${repetitionAnalysis.score} → ${retryAnalysis.score}`)
-                            content = correctedContent
-                        }
-                    }
-                }
-            }
-
-            console.log(`   ✅ Humanizado: ${content.split(/\s+/).length} palabras`)
-            return { content, success: true }
-        } catch (error) {
-            console.error('❌ Error humanizing:', error)
+            console.warn('⚠️ Gemini API falló después de reintentos')
             return { content: cleanedText.substring(0, 500), success: false }
         }
+
+        let content = result
+        const wordCount = content.split(/\s+/).length
+
+        // Si excede el objetivo por más del 20%, usar prompt de reducción
+        if (wordCount > targetWords * 1.2) {
+            console.log(`   ⚠️ Exceso: ${wordCount}/${targetWords} palabras, solicitando reducción...`)
+
+            const reductionTopic = content.split(/[.!?]/)[0]?.substring(0, 100) || 'noticia'
+            const reducePrompt = getReductionPrompt({ wordCount, targetWords, content, reductionTopic })
+
+            const reduced = await callGemini(reducePrompt, targetWords * 3, 0.3)
+            if (reduced) {
+                content = reduced
+                console.log(`   ✅ Reducido: ${reduced.split(/\s+/).length} palabras`)
+            }
+        }
+
+        // ANTI-REPETICIÓN: Detectar y corregir repeticiones
+        const repetitionAnalysis = detectRepetitions(content)
+
+        if (!repetitionAnalysis.isValid) {
+            console.log(`   ⚠️ Repeticiones detectadas (score: ${repetitionAnalysis.score})`)
+
+            const correctivePrompt = `${ANTI_REPETITION_SYSTEM}\n\n${buildCorrectivePrompt(repetitionAnalysis.issues, content, targetWords)}`
+            const corrected = await callGemini(correctivePrompt, Math.max(600, targetWords * 4), 0.7)
+
+            if (corrected) {
+                const retryAnalysis = detectRepetitions(corrected)
+                if (retryAnalysis.score > repetitionAnalysis.score) {
+                    console.log(`   ✅ Corrección anti-repetición: score ${repetitionAnalysis.score} → ${retryAnalysis.score}`)
+                    content = corrected
+                }
+            }
+        }
+
+        console.log(`   ✅ Humanizado: ${content.split(/\s+/).length} palabras`)
+        return { content, success: true }
     }
 
-    // Fallback si el loop termina sin retornar (no debería pasar)
+    // Fallback si el loop termina sin retornar
     return { content: text.substring(0, 500), success: false }
 }
 
@@ -1152,20 +1078,10 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
 
             let cierreExtendido = ''
             try {
-                const cierreResponse = await fetch(CHUTES_CONFIG.endpoints.chatCompletions, {
-                    method: 'POST',
-                    headers: getChutesHeaders(),
-                    body: JSON.stringify({
-                        model: CHUTES_CONFIG.model,
-                        messages: [{ role: 'user', content: cierrePrompt }],
-                        max_tokens: palabrasCierre * 5,
-                        temperature: 0.5
-                    })
-                })
+                const result = await callGemini(cierrePrompt, palabrasCierre * 5, 0.5)
 
-                if (cierreResponse.ok) {
-                    const cierreData = await cierreResponse.json()
-                    cierreExtendido = cierreData.choices?.[0]?.message?.content?.trim() || ''
+                if (result) {
+                    cierreExtendido = result
                     console.log(`✅ Cierre IA generado: ${cierreExtendido.split(/\s+/).length} palabras`)
                 }
             } catch (cierreError) {

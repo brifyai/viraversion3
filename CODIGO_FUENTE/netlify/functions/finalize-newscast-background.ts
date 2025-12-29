@@ -77,34 +77,40 @@ const VOICE_CONFIG: Record<string, { id: string; wpm: number; ssmlGender: 'MALE'
     'es-US-Neural2-A': { id: 'es-US-Neural2-A', wpm: 152, ssmlGender: 'FEMALE' },  // Sofía
     'es-US-Neural2-B': { id: 'es-US-Neural2-B', wpm: 157, ssmlGender: 'MALE' },    // Carlos
     'es-US-Neural2-C': { id: 'es-US-Neural2-C', wpm: 166, ssmlGender: 'MALE' },    // Diego
+    'es-US-Neural2-D': { id: 'es-US-Neural2-D', wpm: 175, ssmlGender: 'MALE' },    // Miguel
+    'es-US-Neural2-E': { id: 'es-US-Neural2-E', wpm: 170, ssmlGender: 'FEMALE' },  // Laura
+    'es-US-Neural2-F': { id: 'es-US-Neural2-F', wpm: 160, ssmlGender: 'FEMALE' },  // Ana
 }
 
-// Diccionario de símbolos a reemplazar con palabras
-const SYMBOL_REPLACEMENTS: Record<string, string> = {
-    'N°': 'número', 'n°': 'número', 'Nº': 'número', 'nº': 'número',
+// Diccionario de símbolos seguros (se pueden reemplazar globalmente)
+const SAFE_SYMBOLS: Record<string, string> = {
     '%': ' por ciento',
-    '(s)': '',
     '&': ' y ',
     '+': ' más ',
     '=': ' igual a ',
     '°C': ' grados celsius',
     '°F': ' grados fahrenheit',
     '°': ' grados',
-    'km/h': 'kilómetros por hora',
-    'Km/h': 'kilómetros por hora',
-    'KM/H': 'kilómetros por hora',
+    '|': ', ',
+    '/': ' por '
+}
+
+// Diccionario de abreviaturas (REQUIEREN límite de palabra \b para no romper "Ministro")
+const ABBREVIATIONS: Record<string, string> = {
+    'N°': 'número', 'n°': 'número', 'Nº': 'número', 'nº': 'número', 'No.': 'número',
+    'km/h': 'kilómetros por hora', 'Km/h': 'kilómetros por hora',
     'm/s': 'metros por segundo',
-    'UF': 'u-efe',
     'Kg': 'kilos', 'kg': 'kilos', 'KG': 'kilos',
     'mts': 'metros', 'Mts': 'metros',
     'hrs': 'horas', 'Hrs': 'horas',
-    'mins': 'minutos', 'min': 'minutos',
-    'seg': 'segundos',
+    'mins': 'minutos', 'min': 'minutos', // Ahora protegidos por \b
+    'seg': 'segundos',                  // Ahora protegido por \b
     'aprox': 'aproximadamente', 'Aprox': 'aproximadamente',
     'etc': 'etcétera', 'Etc': 'etcétera',
     'vs': 'versus', 'VS': 'versus',
     'c/u': 'cada uno',
     'p/': 'para', 's/': 'sin', 'c/': 'con',
+    '(s)': ''
 }
 
 // Siglas conocidas que se leen como palabra (NO deletrear)
@@ -113,7 +119,7 @@ const KNOWN_ACRONYMS = [
     'ONU', 'FBI', 'CIA', 'NASA', 'UEFA', 'FIFA', 'NBA', 'NFL',
     'CEO', 'COO', 'CFO', 'CTO', 'URL', 'USB', 'GPS', 'LED', 'LCD',
     'COVID', 'SIDA', 'VIH', 'ADN', 'RUT', 'UDI', 'PPD',
-    'EEUU', 'OMS', 'OIT', 'BID', 'FMI', 'BCE', 'UE',
+    'OMS', 'OIT', 'BID', 'FMI', 'BCE', 'UE',
     'CAE', 'BRP', 'CVE', 'SML', 'UTM', 'APV',
     'CNN', 'BBC', 'TVN', 'CHV', 'T13'
 ]
@@ -127,57 +133,77 @@ const COMMON_UPPERCASE = [
 
 /**
  * Convierte texto plano a SSML optimizado para Google Cloud TTS
- * - Limpia Markdown y símbolos
+ * - Limpia formato Markdown
+ * - Reemplaza símbolos con palabras (Moneda, Unidades)
+ * - Agrega pausas y etiquetas <s>
  * - Procesa siglas inteligentemente
- * - Agrega pausas y etiquetas <s> por oración
  * - Soporta <prosody> para noticias destacadas
  */
 function textToSSML(text: string, isHighlighted: boolean = false): string {
     let cleaned = text
 
+    // 0. LIMPIEZA CRÍTICA PRIMERO
+    cleaned = cleaned
+        .replace(/\*/g, '')
+        .replace(/#/g, '')
+        .replace(/_{2,}/g, '')
+        .replace(/~{2,}/g, '')
+
     // 1. Limpieza de Markdown
     cleaned = cleaned
-        .replace(/\*\*([^*]+)\*\*/g, '$1')      // **Negritas**
-        .replace(/\*([^*]+)\*/g, '$1')           // *Cursivas*
-        .replace(/__([^_]+)__/g, '$1')           // __Subrayado__
-        .replace(/_([^_]+)_/g, '$1')             // _Cursivas_
-        .replace(/#{1,6}\s*/g, '')               // # Headers
-        .replace(/^[-*+]\s+/gm, '')              // - Listas
-        .replace(/^\d+\.\s+/gm, '')              // 1. Listas numeradas
-        .replace(/`([^`]+)`/g, '$1')             // `Código inline`
-        .replace(/```[\s\S]*?```/g, '')          // ```Bloques de código```
-        .replace(/---+/g, '')                    // --- Líneas horizontales
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // [Links](url)
-        .replace(/\*+/g, '')                     // Asteriscos sueltos
-        .replace(/#+/g, '')                      // Almohadillas sueltas
-        .replace(/_{2,}/g, '')                   // Guiones bajos decorativos
-        .replace(/~{2,}/g, '')                   // ~~Tachado~~
-        .replace(/>/g, '')                       // > Citas
-        .replace(/\|/g, ', ')                    // | Tablas
-        .replace(/\\/g, '')                      // Escapes
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/!\[([^\]]*)\]\([^)]+\)/g, '')
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/---+/g, '')
+        .replace(/===+/g, '')
+        .replace(/^[-+]\s+/gm, '')
+        .replace(/^\d+\.\s+/gm, '')
+        .replace(/>/g, '')
+        .replace(/\|/g, ', ')
+        .replace(/\\/g, '')
+        .replace(/\[\s*\]/g, '')
+        .replace(/\[x\]/gi, '')
+        .replace(/:\w+:/g, '')
 
-    // 2. Escapar caracteres especiales XML
+    // 2. CORRECCIONES FONÉTICAS ESPECÍFICAS (Manuales)
+    // Expandir EEUU antes de que se procese como sigla
     cleaned = cleaned
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
+        .replace(/\bEE\.?UU\.?\b/g, 'Estados Unidos')
+        .replace(/\bEEUU\b/g, 'Estados Unidos')
 
-    // 3. Reemplazar símbolos con palabras
-    const sortedSymbols = Object.entries(SYMBOL_REPLACEMENTS)
-        .sort((a, b) => b[0].length - a[0].length)
-    for (const [symbol, replacement] of sortedSymbols) {
-        const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        cleaned = cleaned.replace(new RegExp(escaped, 'g'), replacement)
+    // 3. MONEDA LOCALIZADA ($ -> pesos al final)
+    // Transforma "$ 500.000" o "$500.000" -> "500.000 pesos"
+    cleaned = cleaned.replace(/\$\s?(\d[\d\.]*)/g, '$1 pesos')
+
+    // 4. Reemplazo de SÍMBOLOS SEGUROS
+    for (const [symbol, replacement] of Object.entries(SAFE_SYMBOLS)) {
+        const escapedSymbol = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        cleaned = cleaned.replace(new RegExp(escapedSymbol, 'g'), replacement)
     }
 
-    // 4. Limpiar números con formato de miles
+    // 5. Reemplazo de ABREVIATURAS con LÍMITE DE PALABRA (\b)
+    const sortedAbbrs = Object.entries(ABBREVIATIONS).sort((a, b) => b[0].length - a[0].length)
+
+    for (const [abbr, replacement] of sortedAbbrs) {
+        const escapedAbbr = abbr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+        // Si termina en punto (ej: "No."), el punto delimita. Si no, usamos \b.
+        if (abbr.endsWith('.')) {
+            cleaned = cleaned.replace(new RegExp(`\\b${escapedAbbr}(?=\\s|$)`, 'gi'), replacement)
+        } else {
+            cleaned = cleaned.replace(new RegExp(`\\b${escapedAbbr}\\b`, 'gi'), replacement)
+        }
+    }
+
+    // 6. Limpiar números con formato de miles (155.772 → 155772)
+    // Neural2 lee mejor los números enteros sin puntos
     cleaned = cleaned.replace(/(\d)\.(\d{3})(?!\d)/g, '$1$2')
 
-    // 5. Limpiar espacios
-    cleaned = cleaned.replace(/\s+/g, ' ').replace(/\n+/g, ' ').trim()
+    // 7. Limpiar espacios múltiples y saltos
+    cleaned = cleaned.replace(/\s+/g, ' ').replace(/\n+/g, ' ').replace(/\r+/g, '').trim()
 
-    // 6. Procesar por oraciones con etiquetas <s>
+    // 8. Procesar por oraciones
     const sentences = cleaned.split(/(?<=[.!?])\s+/)
     let ssmlBody = ''
 
@@ -186,26 +212,26 @@ function textToSSML(text: string, isHighlighted: boolean = false): string {
 
         let processed = sentence
 
-        // 7. Procesar siglas (2-4 letras mayúsculas)
+        // 9. Procesar siglas (2-4 letras mayúsculas)
         processed = processed.replace(/\b([A-ZÁÉÍÓÚÑ]{2,4})\b/g, (match) => {
             if (COMMON_UPPERCASE.includes(match)) return match
             if (KNOWN_ACRONYMS.includes(match)) return match
+            // Para las desconocidas usamos SSML para deletrear
             return `<say-as interpret-as="characters">${match}</say-as>`
         })
 
-        // 8. Agregar pausas por comas (250ms)
+        // 10. Pausas
         processed = processed.replace(/,\s+/g, ', <break time="250ms"/> ')
 
-        // 9. Envolver oración en <s> con pausa al final
+        // 11. Envolver oración en <s> con pausa al final
         let pauseTime = '600ms'
         if (sentence.endsWith('?') || sentence.endsWith('!')) pauseTime = '700ms'
 
         ssmlBody += `<s>${processed.trim()}</s><break time="${pauseTime}"/> `
     }
 
-    // 10. Aplicar <prosody> si es noticia destacada
+    // 12. Aplicar <prosody> si es noticia destacada
     if (isHighlighted) {
-        // Voz ligeramente más alta y énfasis para noticias importantes
         ssmlBody = `<prosody rate="medium" pitch="+1st">${ssmlBody}</prosody>`
     }
 
@@ -217,7 +243,10 @@ function textToSSML(text: string, isHighlighted: boolean = false): string {
  * WPM ya calibrados, no se necesita fórmula wpm/150
  */
 function calculateSpeakingRate(wpm: number, userAdjust: number = 0): number {
-    const baseRate = 1.0  // Velocidad normal de Google TTS
+    // Calcular speakingRate
+    // REFERENCIA USUARIO: Default speakingRate = 0.9 (ligeramente más lento y pausado)
+    // El ajuste del usuario se aplica sobre este base
+    const baseRate = 0.9
     const adjusted = baseRate + (userAdjust / 100)
     return Math.max(0.25, Math.min(4.0, adjusted))
 }
@@ -244,7 +273,7 @@ async function generateTTSAudio(
     const voiceConfig = VOICE_CONFIG[voiceId] || VOICE_CONFIG['es-US-Neural2-B']
     const languageCode = 'es-US'
 
-    // Calcular speakingRate basado en WPM
+    // Calcular speakingRate
     const speakingRate = calculateSpeakingRate(voiceConfig.wpm, voiceSettings?.speed ?? 0)
 
     // Determinar pitch según género de voz
@@ -292,9 +321,9 @@ async function generateTTSAudio(
             const audioBuffer = Buffer.from(data.audioContent, 'base64')
 
             // ✅ CÁLCULO REAL DE DURACIÓN basado en tamaño de MP3
-            // Google Cloud TTS @ 24kHz: calibrado con datos reales (3.9MB/527s)
+            // Google Cloud TTS @ 24kHz: calibrado con datos reales
             // Fórmula: duración = tamaño_bytes / bytes_por_segundo
-            const BYTES_PER_SECOND = 7500  // Calibrado 2024-12-27
+            const BYTES_PER_SECOND = 8000  // Calibrado 2024-12-29 (antes 7500)
             const realDuration = Math.round(audioBuffer.length / BYTES_PER_SECOND)
 
             console.log(`   ✅ Audio Pro: ${audioBuffer.length} bytes, ${realDuration}s REAL, pitch=${finalPitch}`)
@@ -541,4 +570,3 @@ const handler = async (event: NetlifyEvent): Promise<NetlifyResponse> => {
 }
 
 export { handler }
-

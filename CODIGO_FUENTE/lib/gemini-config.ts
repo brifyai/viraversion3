@@ -9,12 +9,12 @@ export const GEMINI_CONFIG = {
     // API Key de Gemini (Google AI Studio)
     apiKey: process.env.GEMINI_API_KEY || '',
 
-    // Modelo a usar (gemini-1.5-flash es rápido y económico)
-    model: 'gemini-1.5-flash',
+    // Modelo a usar (gemini-2.0-flash-001 es rápido y económico)
+    model: 'gemini-2.0-flash-001',
 
     // Endpoints
     endpoints: {
-        generateContent: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent'
+        generateContent: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-001:generateContent'
     },
 
     // Configuración de generación por defecto

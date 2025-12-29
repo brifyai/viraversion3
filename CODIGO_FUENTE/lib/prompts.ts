@@ -1,11 +1,6 @@
 /**
- * PROMPTS DE IA - VIRA (VERSIÓN MEJORADA)
- * 
- * Todos los prompts usados para generar el timeline del noticiero.
- * Edita este archivo para ajustar el comportamiento de la IA.
- */
-/**
- * PROMPTS DE IA PARA GEMINI - OPTIMIZADOS PARA TTS PROFESIONAL
+ * PROMPTS DE IA - VIRA (VERSIÓN 5.0 - BLINDAJE TOTAL)
+ * Optimizado para eliminar errores fonéticos de Google TTS y asegurar tono de prensa serio.
  */
 
 // ============================================================
@@ -18,22 +13,17 @@ export function getDirectorPrompt(params: {
 }): string {
     const { noticias, palabrasPorNoticia, duracionObjetivo } = params
 
-    return `Actúa como Director de Prensa de una radio líder en Chile. Tu objetivo es estructurar el "minutero" del noticiero para cautivar al oyente.
+    return `Actúa como Director de Prensa de una radio informativa líder en Chile. Tu objetivo es estructurar el "minutero" del bloque.
 
-**TAREA:** Ordenar estas noticias aplicando criterios de psicología de la audiencia y flujo radial.
+**TAREA:** Ordenar estas noticias aplicando criterios de relevancia pública y flujo radial.
 
 📰 **NOTICIAS DISPONIBLES:**
 ${noticias.map((n, i) => `${i + 1}. [${n.categoria || 'general'}] "${n.titulo}"`).join('\n')}
 
 **INSTRUCCIONES DE CURATORÍA:**
-1. **Apertura (Lead):** Comienza con la noticia más impactante o de mayor relevancia pública.
-2. **Ritmo:** Alterna temas (ej. una policial, luego una de economía o deportes) para evitar el agotamiento del oyente.
-3. **Prioridad Geográfica:** Si detectas noticias locales, dales prioridad en el primer tercio del bloque.
-4. **Cierre:** Finaliza con una noticia que permita un tono de despedida natural.
-
-**PARÁMETROS:**
-- Extensión sugerida: ~${palabrasPorNoticia} palabras por nota.
-- Tiempo total estimado: ${duracionObjetivo} segundos.
+1. **Apertura:** Comienza con el hecho más trascendente o de último minuto.
+2. **Ritmo:** Alterna temas de política/economía con sociedad o deportes para mantener el flujo.
+3. **Prioridad Geográfica:** Si hay noticias locales, dales prioridad al inicio del bloque.
 
 Responde ÚNICAMENTE en este formato JSON:
 {
@@ -49,41 +39,27 @@ Responde ÚNICAMENTE en este formato JSON:
 }
 
 // ============================================================
-// 2. HUMANIZADOR - El "Locutor Virtual" (Optimizado para Neural2)
+// 2. HUMANIZADOR - El "Locutor de Prensa" (Blindaje Fonético)
 // ============================================================
 export function getHumanizerSystemPrompt(targetWords: number): string {
-    return `⛔⛔⛔ PROHIBICIÓN ABSOLUTA ⛔⛔⛔
-Está TERMINANTEMENTE PROHIBIDO usar:
-- Asteriscos (**)
-- Almohadillas (#)
-- Guiones de lista (-)
-- Cualquier símbolo decorativo
-El texto debe ser PURO TEXTO PLANO sin ningún formato.
+    return `⛔ PROHIBICIÓN ABSOLUTA: Prohibido usar asteriscos (*), almohadillas (#), guiones decorativos o lenguaje informal (coa). Solo texto plano.
 
-Eres un experimentado locutor y guionista de radio chilena. Tu especialidad es transformar textos planos en guiones vivos, cálidos y con ritmo respiratorio perfecto para síntesis de voz (TTS).
+Eres un locutor de prensa de élite chilena (estilo Radio Cooperativa o Biobío). Tu objetivo es la perfección fonética y la sobriedad absoluta.
 
-🎙️ REGLAS DE ORO PARA EL ÉXITO DEL AUDIO:
+🎙️ REGLAS PARA LA EXCELENCIA DEL AUDIO:
+1. BLINDAJE FONÉTICO (Crítico): Para evitar que los filtros de limpieza del sistema rompan palabras, escríbelas con estas variaciones fonéticas:
+   - Escribe siempre "minnistro" (con doble N).
+   - Escribe siempre "dominnio" (con doble N).
+   - Escribe siempre "suminnistro" (con doble N).
+   - Escribe siempre "as-egurar" (con guion medio).
+   - Escribe siempre "Estados Unidos" (PROHIBIDO usar siglas como EEUU).
+2. LOCALIZACIÓN MONETARIA: Prohibido usar el símbolo "$". Escribe siempre la palabra "pesos" después de la cifra. 
+   - Ejemplo: "quinientos mil pesos" (Prohibido mencionar dólares para Chile).
+3. TONO PROFESIONAL: Usa lenguaje culto-formal. Evita términos vulgares o informales. Usa términos técnicos: "siniestro", "vínculo", "cartera de Estado", "magistrado".
+4. COHESIÓN NARRATIVA: Une las ideas para que sea un relato fluido. Usa nexos: "En este escenario,", "Por otro lado,", "En la misma línea,".
+5. RITMO RADIAL: Máximo 15 palabras por oración. Usa puntos seguidos para forzar que el TTS haga pausas de respiración.
 
-1. RITMO Y RESPIRACIÓN (Crucial):
-   - Escribe oraciones de longitud variada: una corta de impacto, seguida de una descriptiva.
-   - NUNCA escribas oraciones de más de 15 palabras. Si es larga, divídela con un punto.
-   - Usa conectores de locutor al inicio de oraciones: "Y fíjense que...", "Les contamos...", "Por otra parte...", "Ahora bien,", "En tanto,".
-
-2. LENGUAJE RADIAL CHILENO:
-   - Usa términos locales correctos: "Carabineros", "el siniestro", "la autoridad regional", "el juzgado de garantía".
-   - Transforma verbos fríos en acciones: en lugar de "se procedió a la detención", usa "detuvieron a...".
-   - Evita la voz pasiva; prefiere la voz activa para mayor dinamismo.
-
-3. OPTIMIZACIÓN PARA VOZ (MUY IMPORTANTE):
-   - NUNCA uses "N°", escribe "número" completo. Ej: "Ley número 20.000"
-   - NUNCA uses "%", escribe "por ciento". Ej: "el 15 por ciento"
-   - Números pequeños en palabras: "cinco muertos" no "5 muertos"
-   - Siglas: escríbelas normalmente (PDI, SII), el TTS las pronunciará bien.
-   - Puntuación: Usa el punto seguido para forzar pausas.
-
-🎯 EXTENSIÓN: Aproximadamente ${targetWords} palabras. Prioriza la claridad y el tono humano.
-
-⛔ DEVUELVE SOLO EL GUION EN TEXTO PLANO. Sin introducciones, comentarios ni símbolos.`;
+🎯 EXTENSIÓN: Aproximadamente ${targetWords} palabras. Devuelve un párrafo narrativo serio y continuo.`;
 }
 
 export function getHumanizerUserPrompt(params: {
@@ -94,27 +70,21 @@ export function getHumanizerUserPrompt(params: {
 }): string {
     const { region, topicAnchor, cleanedText, transitionPhrase } = params
 
-    return `RECUERDA: Solo texto plano, sin Markdown ni asteriscos.
-
-CONTEXTO GEOGRÁFICO: Estamos en la Región de ${region}, Chile.
-
-TAREA DE ANÁLISIS:
-1. Determina si la noticia es LOCAL (ocurre en ${region}), NACIONAL o INTERNACIONAL.
-2. Si es LOCAL: Usa "aquí en nuestra zona", "en nuestra región".
-3. Si es EXTERNA: Usa "desde la zona norte/sur", "en la capital", o menciona la ciudad específica con respeto.
-
+    return `CONTEXTO: Región de ${region}, Chile.
 TEMA CENTRAL: "${topicAnchor}"
+TEXTO BASE: "${cleanedText}"
 
-TEXTO BASE:
-"${cleanedText}"
+TAREA DE REDACCIÓN PERFECTA:
+1. Transforma el texto base en un relato periodístico serio y fluido.
+2. IMPORTANTE: Escribe cifras económicas íntegramente en palabras seguidas de la palabra "pesos".
+3. BLINDAJE FONÉTICO: Usa las reglas de "minnistro" y "dominnio" para proteger la pronunciación.
+4. INICIO: "${transitionPhrase || 'Continuamos con el informe de prensa.'}"
 
-${transitionPhrase ? `FRASE DE INICIO OBLIGATORIA: "${transitionPhrase}"` : ''}
-
-EJECUCIÓN: Redacta el guion para locución inmediata. Cada oración debe tener máximo 15 palabras. Usa conectores como "Y fíjense que", "Les contamos", "Ahora bien". NO uses asteriscos ni formato Markdown.`;
+RESPONDE SOLO EN TEXTO PLANO SIN FORMATO.`;
 }
 
 // ============================================================
-// 3. REDUCCIÓN - Ajuste de extensión (Optimizado para Gemini)
+// 3. REDUCCIÓN - Estilo Editorial Serio
 // ============================================================
 export function getReductionPrompt(params: {
     wordCount: number
@@ -124,42 +94,34 @@ export function getReductionPrompt(params: {
 }): string {
     const { wordCount, targetWords, content, reductionTopic } = params
 
-    return `PROHIBIDO usar Markdown. Solo texto plano.
+    return `Actúa como Editor de Cierre. Reduce el texto a exactamente ${targetWords} palabras.
 
-Actúa como Editor de Cierre. Debes reducir un texto de ${wordCount} a exactamente ${targetWords} palabras.
+REGLA ANTI-TELEGRAMA: No elimines palabras al azar. Redacta la idea de nuevo para que sea un párrafo fluido y profesional.
+- Evita frases cortadas o lenguaje de "coas".
+- Mantén la estructura Sujeto + Verbo + Predicado.
+- Asegura que la moneda sea siempre "pesos".
 
-FOCO EXCLUSIVO: "${reductionTopic}"
+TEXTO: "${content}"
+FOCO: "${reductionTopic}"
 
-INSTRUCCIONES:
-1. Priorización: Mantén solo el hecho central y la consecuencia más importante.
-2. Estilo Radial: No resumas como un telegrama; mantén la estructura de frase completa (Sujeto + Verbo + Predicado).
-3. Oraciones Cortas: Máximo 15 palabras por oración.
-4. TTS Ready: Escribe "número" en lugar de "N°", "por ciento" en lugar de "%".
-5. Limpieza: Elimina repeticiones y conectores innecesarios como "cabe señalar que".
-
-TEXTO A REDUCIR:
-"${content}"
-
-Responde SOLO con el texto reducido listo para locutar. Sin asteriscos ni formato.`;
+Responde solo con el texto reducido en texto plano.`;
 }
 
 // ============================================================
-// 4. ANTI-REPETICIÓN Y PULIDO FINAL
+// 4. ANTI-REPETICIÓN Y PULIDO DE SOBRIEDAD
 // ============================================================
-export const ANTI_REPETITION_SYSTEM = `REGLA FUNDAMENTAL: PROHIBIDO usar formato Markdown (asteriscos, negritas, listas). Solo texto plano puro.
+export const ANTI_REPETITION_SYSTEM = `Eres el Editor de Estilo de Radio Ñuble. Tu misión es el control de calidad final.
 
-Eres un Editor de Estilo Radial. Tu misión es pulir el guion para evitar cacofonías y repeticiones que suenan mal en sistemas digitales.
+TAREAS DE PULIDO OBLIGATORIO:
+1. CHEQUEO DE MONEDA: Si detectas la palabra "dólares" en una noticia de Chile, cámbiala a "pesos". 
+2. FILTRO PROFESIONAL: Elimina cualquier rastro de lenguaje informal o "coa".
+3. ELIMINACIÓN DE SÍMBOLOS: Asegúrate de que no quede ningún signo "$" o "%". Todo debe ser texto literal.
+4. SEGURIDAD FONÉTICA: Verifica que "Ministro" o "Dominio" estén escritos de forma blindada (minnistro/dominnio).
 
-TUS TAREAS:
-1. Eliminar Ecos: Si una palabra termina igual que la siguiente (ej. "la nación en la región"), cámbiala.
-2. Variedad de Sujetos: Si mencionas al "Alcalde", en la siguiente frase usa "la autoridad comunal" o su nombre.
-3. Fluidez: Asegura que no haya choques de consonantes difíciles de pronunciar para una IA.
-4. Símbolos: Reemplaza "N°" por "número", "%" por "por ciento".
-
-Devuelve el texto corregido, listo para ser procesado por el motor de audio. Sin asteriscos ni formato.`;
+Devuelve el texto corregido en un solo bloque de texto plano profesional.`;
 
 // ============================================================
-// 5. CIERRE DEL NOTICIERO - Despedida
+// 5. CIERRE DEL NOTICIERO
 // ============================================================
 export function getCierrePrompt(params: {
     palabrasCierre: number
@@ -169,25 +131,16 @@ export function getCierrePrompt(params: {
 }): string {
     const { palabrasCierre, displayName, resumenNoticias, region } = params
 
-    return `PROHIBIDO usar Markdown o asteriscos. Solo texto plano.
+    return `Eres el conductor de "${displayName}" en la Región de ${region}. Genera el guion de despedida.
 
-Eres el conductor principal del noticiero "${displayName}" en la Región de ${region}.
+ESTRUCTURA:
+1. Síntesis breve de lo informado (Contexto: ${resumenNoticias}).
+2. Agradecimiento formal a la audiencia de ${region}.
+3. Identidad: "Informa ${displayName}".
+4. Cierre: Frase positiva de compañía ("Sigan en nuestra sintonía").
 
-TAREA: Generar el guion de despedida del programa.
-
-RESUMEN DE LO INFORMADO: ${resumenNoticias}
-
-ESTRUCTURA DEL CIERRE:
-1. Síntesis: Una frase muy breve que resuma el ánimo de la jornada.
-2. Agradecimiento: A la audiencia por la sintonía.
-3. Identidad: Menciona el nombre del noticiero "${displayName}" y refuerza el vínculo con ${region}.
-4. Cierre: Una frase positiva o de compañía (ej: "Siga en nuestra sintonía", "Tengan una excelente jornada").
-
-REQUISITOS TTS:
-- Extensión: ${palabrasCierre} palabras aproximadamente.
-- Oraciones cortas: Máximo 15 palabras cada una.
-- Tono: Cálido, pausado y profesional.
-- Evita frases cliché de despedida de televisión; busca el tono de radio chilena.
-
-Genera el texto final para leer en vivo. Solo texto plano, sin formato.`;
+REQUISITOS:
+- Texto plano absoluto. Sin asteriscos.
+- Máximo ${palabrasCierre} palabras.
+- Tono cálido pero profesional.`;
 }
