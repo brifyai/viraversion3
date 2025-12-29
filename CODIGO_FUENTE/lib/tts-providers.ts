@@ -2,6 +2,7 @@ import 'server-only';
 
 import { TTSProvider, TTSRequest, TTSResponse } from './types';
 import { logTokenUsage, calculateGoogleTTSCost } from './usage-logger';
+import { GoogleAuth } from 'google-auth-library';
 
 // ============================================================================
 // TIMING CONSTANTS - Para cálculos de duración
@@ -220,72 +221,93 @@ export const GOOGLE_CLOUD_VOICES = {
 };
 
 // ============================================================================
-// GOOGLE CLOUD TTS PROVIDER
+// GEMINI TTS PROVIDER (Cloud TTS v1beta1 with OAuth2)
+// Endpoint: https://texttospeech.googleapis.com/v1beta1/text:synthesize
+// Requires Service Account credentials
 // ============================================================================
 export class GoogleCloudTTSProvider implements TTSProvider {
-  private apiKey: string;
-  private baseUrl = 'https://texttospeech.googleapis.com/v1/text:synthesize';
-  public name = 'GoogleCloudTTS';
+  private baseUrl = 'https://texttospeech.googleapis.com/v1beta1/text:synthesize';
+  public name = 'GeminiTTS';
+  private auth: GoogleAuth | null = null;
 
-  constructor(apiKey?: string) {
-    this.apiKey = apiKey || process.env.GOOGLE_CLOUD_TTS_API_KEY || '';
+  constructor() {
+    // Cargar credenciales de Service Account
+    const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    const credentialsJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+
+    if (credentialsPath || credentialsJson) {
+      const credentials = credentialsJson ? JSON.parse(credentialsJson) : undefined;
+      this.auth = new GoogleAuth({
+        credentials,
+        keyFilename: credentialsPath,
+        scopes: ['https://www.googleapis.com/auth/cloud-platform']
+      });
+    }
   }
 
   async synthesize(text: string, options?: any): Promise<TTSResponse> {
     try {
-      console.log(`[GoogleCloudTTS] Generando audio para: "${text.substring(0, 50)}..."`);
+      console.log(`[GeminiTTS] Generando audio para: "${text.substring(0, 50)}..."`);
 
-      // Obtener voiceId y validar
-      const voiceId = this.mapVoiceId(options?.voiceId || options?.voice);
-      const languageCode = voiceId.split('-').slice(0, 2).join('-');
+      // Obtener access token
+      if (!this.auth) {
+        throw new Error('Google Auth not configured. Set GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_SERVICE_ACCOUNT_KEY');
+      }
 
-      // Convertir texto a SSML con limpieza profunda
-      const ssmlContent = textToSSML(text, options?.isHighlighted);
-      console.log(`[GoogleCloudTTS] SSML generado: "${ssmlContent.substring(0, 100)}..."`);
+      const client = await this.auth.getClient();
+      const accessToken = await client.getAccessToken();
 
-      // Determinar pitch según el género de la voz
-      // Masculino: -2.0 (más grave y con autoridad)
-      // Femenino: -1.0 (quita lo chillón sin perder calidez)
-      const voiceConfig = Object.values(GOOGLE_CLOUD_VOICES).find(v => v.id === voiceId);
-      const isFemaleVoice = voiceConfig?.ssmlGender === 'FEMALE';
-      const basePitch = isFemaleVoice ? -1.0 : -2.0;
-      const finalPitch = options?.pitch !== undefined ? options.pitch : basePitch;
+      if (!accessToken.token) {
+        throw new Error('Failed to obtain access token');
+      }
+
+      // Mapear voz Neural2 a voz Gemini
+      const geminiVoice = this.mapToGeminiVoice(options?.voiceId || options?.voice);
+
+      // Limpiar texto (Gemini usa texto plano, no SSML)
+      const cleanText = this.cleanText(text);
+
+      // Prompt de estilo (persona del locutor chileno)
+      const stylePrompt = `Actúa como un locutor de radio de una emisora juvenil en Santiago de Chile. Tu tono debe ser el de un locutor profesional ameno, cercano y creíble. Utiliza una entonación chilena natural: marca bien las subidas de tono al final de las preguntas. Usa un lenguaje coloquial pero profesional.`;
 
       const requestBody = {
-        input: { ssml: ssmlContent },
-        voice: {
-          languageCode,
-          name: voiceId
-        },
         audioConfig: {
-          audioEncoding: 'MP3',
-          sampleRateHertz: 24000,
-          // speakingRate = 1.0 base (velocidad normal de Google TTS)
-          // Los WPM ya están calibrados reales, no se necesita fórmula
-          // El usuario puede ajustar con options.speed (-10 a +10)
-          speakingRate: 1.0 + ((options?.speed || 0) / 100),
-          pitch: finalPitch,
-          effectsProfileId: ['medium-bluetooth-speaker-class-device']
+          audioEncoding: "LINEAR16",
+          pitch: options?.pitch || 0,
+          speakingRate: 1 + ((options?.speed || 0) / 100)
+        },
+        input: {
+          prompt: stylePrompt,
+          text: cleanText
+        },
+        voice: {
+          languageCode: "es-419",
+          modelName: "gemini-2.5-pro-tts",
+          name: geminiVoice
         }
       };
 
-      console.log(`[GoogleCloudTTS] Voice: ${voiceId}, pitch: ${finalPitch}, gender: ${isFemaleVoice ? 'female' : 'male'}`);
+      console.log(`[GeminiTTS] Voice: ${geminiVoice}, Model: gemini-2.5-pro-tts (OAuth2)`);
 
-      const response = await fetch(`${this.baseUrl}?key=${this.apiKey}`, {
+      const response = await fetch(this.baseUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken.token}`
+        },
         body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Google Cloud TTS API Error (${response.status}): ${errorText}`);
+        throw new Error(`Gemini TTS API Error (${response.status}): ${errorText}`);
       }
 
       const data = await response.json();
 
       if (!data.audioContent) {
-        throw new Error('Google Cloud TTS returned no audio content');
+        console.error('Response:', JSON.stringify(data).substring(0, 300));
+        throw new Error('Gemini TTS returned no audio content');
       }
 
       // Decodificar Base64 a ArrayBuffer
@@ -296,52 +318,60 @@ export class GoogleCloudTTSProvider implements TTSProvider {
       }
       const audioBuffer = bytes.buffer;
 
-      // Estimar duración basado en WPM
-      const wordCount = text.split(/\s+/).length;
-      const wpm = this.getVoiceWPM(voiceId);
-      const estimatedDuration = Math.round((wordCount / wpm) * 60);
+      // Estimar duración (LINEAR16 @ 24kHz = 48000 bytes/sec para 16-bit mono)
+      const estimatedDuration = Math.round(audioBuffer.byteLength / 48000);
 
-      console.log(`[GoogleCloudTTS] ✅ Audio: ${audioBuffer.byteLength} bytes, ~${estimatedDuration}s`);
+      console.log(`[GeminiTTS] ✅ Audio: ${audioBuffer.byteLength} bytes, ~${estimatedDuration}s`);
 
       return {
         audioData: audioBuffer,
-        format: 'mp3',
+        format: 'wav',
         duration: estimatedDuration,
-        cost: (text.length / 1000000) * 16, // Neural2: $16 per 1M chars
+        cost: 0,
         success: true,
-        provider: 'google-cloud-tts',
-        voice: voiceId
+        provider: 'gemini-tts',
+        voice: geminiVoice
       };
 
     } catch (error) {
-      console.error('[GoogleCloudTTS] Error:', error);
+      console.error('[GeminiTTS] Error:', error);
       throw error;
     }
   }
 
-  private mapVoiceId(voiceId?: string): string {
-    // Si no hay voiceId, usar voz masculina por defecto
-    if (!voiceId) return 'es-US-Neural2-B';
+  // Limpiar texto para Gemini (sin SSML)
+  private cleanText(text: string): string {
+    return text
+      .replace(/\*/g, '')
+      .replace(/#/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\$\s?(\d[\d\.]*)/g, '$1 pesos')
+      .replace(/\bEE\.?UU\.?\b/g, 'Estados Unidos')
+      .replace(/\bN°\b/gi, 'número')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
 
-    // Si ya es un ID de Google Cloud válido, usarlo directamente
-    if (voiceId.startsWith('es-') && voiceId.includes('Neural2')) {
-      return voiceId;
-    }
-
-    // Default: Carlos (Hombre)
-    return 'es-US-Neural2-B';
+  private mapToGeminiVoice(voiceId?: string): string {
+    const voiceMap: Record<string, string> = {
+      'es-US-Neural2-A': 'Aoede',     // Sofía (mujer)
+      'es-US-Neural2-B': 'Achernar',  // Carlos (hombre)
+      'es-US-Neural2-C': 'Orus'       // Diego (hombre)
+    };
+    if (!voiceId) return 'Achernar'; // Default
+    return voiceMap[voiceId] || 'Achernar';
   }
 
   private getVoiceWPM(voiceId: string): number {
     const voice = Object.values(GOOGLE_CLOUD_VOICES).find(v => v.id === voiceId);
-    return voice?.wpm || 170;
+    return voice?.wpm || 157;
   }
 
   async validateConfig(): Promise<boolean> {
-    if (!this.apiKey) {
-      console.warn('[GoogleCloudTTS] API Key no configurada');
+    if (!this.auth) {
+      console.warn('[GeminiTTS] Credenciales de Service Account no configuradas');
       return false;
-
     }
     return true;
   }
@@ -352,15 +382,15 @@ export class GoogleCloudTTSProvider implements TTSProvider {
 }
 
 // ============================================================================
-// FACTORY - Solo Google Cloud TTS
+// FACTORY - Gemini TTS with OAuth2
 // ============================================================================
 export class TTSProviderFactory {
   static getProvider(): TTSProvider {
-    const apiKey = process.env.GOOGLE_CLOUD_TTS_API_KEY || '';
-    if (!apiKey) {
-      throw new Error('GOOGLE_CLOUD_TTS_API_KEY no está configurada');
+    const hasCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+    if (!hasCredentials) {
+      throw new Error('Configure GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_SERVICE_ACCOUNT_KEY');
     }
-    return new GoogleCloudTTSProvider(apiKey);
+    return new GoogleCloudTTSProvider();
   }
 
   static getBestProvider(): TTSProvider {
@@ -369,11 +399,12 @@ export class TTSProviderFactory {
 
   static getAvailableProviders(): any[] {
     const providers = [];
-    if (process.env.GOOGLE_CLOUD_TTS_API_KEY) {
+    const hasCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+    if (hasCredentials) {
       providers.push({
-        name: 'GoogleCloudTTS',
+        name: 'GeminiTTS',
         isConfigured: () => true,
-        estimateCost: (chars: number) => chars * 0.000016 // Neural2 pricing
+        estimateCost: (chars: number) => 0 // Gemini TTS pricing TBD
       });
     }
     return providers;

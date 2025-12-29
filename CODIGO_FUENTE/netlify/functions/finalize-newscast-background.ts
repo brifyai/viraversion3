@@ -1,4 +1,5 @@
 ﻿import { createClient } from '@supabase/supabase-js'
+import { GoogleAuth } from 'google-auth-library'
 
 // ============================================================
 // BACKGROUND FUNCTION: Finalize Newscast (Audio Generation)
@@ -236,23 +237,37 @@ function textToSSML(text: string, isHighlighted: boolean = false): string {
 }
 
 /**
- * speakingRate = 1.0 base + ajuste del usuario
- * WPM ya calibrados, no se necesita fórmula wpm/150
+ * Mapea voces Neural2 a voces Gemini
  */
-function calculateSpeakingRate(wpm: number, userAdjust: number = 0): number {
-    // Calcular speakingRate
-    // REFERENCIA USUARIO: Default speakingRate = 0.9 (ligeramente más lento y pausado)
-    // El ajuste del usuario se aplica sobre este base
-    const baseRate = 0.9
-    const adjusted = baseRate + (userAdjust / 100)
-    return Math.max(0.25, Math.min(4.0, adjusted))
+function mapToGeminiVoice(voiceId: string): string {
+    const voiceMap: Record<string, string> = {
+        'es-US-Neural2-A': 'Aoede',     // Sofía (mujer)
+        'es-US-Neural2-B': 'Achernar',  // Carlos (hombre)
+        'es-US-Neural2-C': 'Orus'       // Diego (hombre)
+    }
+    return voiceMap[voiceId] || 'Achernar'
 }
 
 /**
- * Genera audio TTS con Google Cloud (implementación profesional)
- * - Pitch diferenciado: -2.0 masculino, -1.0 femenino
- * - effectsProfileId: medium-bluetooth-speaker (elimina metálico)
- * - sampleRateHertz: 24000 (calidad óptima)
+ * Limpia texto para Gemini (sin SSML)
+ */
+function cleanTextForGemini(text: string): string {
+    return text
+        .replace(/\*/g, '')
+        .replace(/#/g, '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/\$\s?(\d[\d\.]*)/g, '$1 pesos')
+        .replace(/\bEE\.?UU\.?\b/g, 'Estados Unidos')
+        .replace(/\bN°\b/gi, 'número')
+        .replace(/\s+/g, ' ')
+        .trim()
+}
+
+/**
+ * Genera audio TTS con Gemini TTS via Cloud TTS v1beta1
+ * Endpoint: https://texttospeech.googleapis.com/v1beta1/text:synthesize
+ * Requires OAuth2 authentication with Service Account
  */
 async function generateTTSAudio(
     text: string,
@@ -260,48 +275,62 @@ async function generateTTSAudio(
     voiceSettings: any,
     isHighlighted: boolean = false
 ): Promise<{ success: boolean; audioData?: Buffer; duration?: number; error?: string }> {
-    const GOOGLE_CLOUD_TTS_API_KEY = process.env.GOOGLE_CLOUD_TTS_API_KEY
+    // Cargar credenciales de Service Account
+    const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS
+    const credentialsJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY
 
-    if (!GOOGLE_CLOUD_TTS_API_KEY) {
-        return { success: false, error: 'GOOGLE_CLOUD_TTS_API_KEY not configured' }
+    if (!credentialsPath && !credentialsJson) {
+        return { success: false, error: 'GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_SERVICE_ACCOUNT_KEY not configured' }
     }
 
-    // Obtener configuración de la voz
-    const voiceConfig = VOICE_CONFIG[voiceId] || VOICE_CONFIG['es-US-Neural2-B']
-    const languageCode = 'es-US'
-
-    // Calcular speakingRate
-    const speakingRate = calculateSpeakingRate(voiceConfig.wpm, voiceSettings?.speed ?? 0)
-
-    // Determinar pitch según género de voz
-    // Masculino: -2.0 (grave, autoridad), Femenino: -1.0 (quita chillón, mantiene calidez)
-    const isFemaleVoice = voiceConfig.ssmlGender === 'FEMALE'
-    const basePitch = isFemaleVoice ? -1.0 : -2.0
-    const finalPitch = voiceSettings?.pitch !== undefined ? voiceSettings.pitch : basePitch
-
-    // Convertir texto a SSML profesional
-    const ssmlText = textToSSML(text, isHighlighted)
-
     try {
-        console.log(`   🎤 TTS Pro: ${voiceConfig.id}, wpm=${voiceConfig.wpm} → rate=${speakingRate.toFixed(2)}, pitch=${finalPitch}, highlighted=${isHighlighted}`)
+        // Configurar GoogleAuth
+        const credentials = credentialsJson ? JSON.parse(credentialsJson) : undefined
+        const auth = new GoogleAuth({
+            credentials,
+            keyFilename: credentialsPath,
+            scopes: ['https://www.googleapis.com/auth/cloud-platform']
+        })
 
-        const response = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_CLOUD_TTS_API_KEY}`, {
+        // Obtener access token
+        const client = await auth.getClient()
+        const accessToken = await client.getAccessToken()
+
+        if (!accessToken.token) {
+            return { success: false, error: 'Failed to obtain access token' }
+        }
+
+        // Mapear voz Neural2 a voz Gemini
+        const geminiVoice = mapToGeminiVoice(voiceId)
+
+        // Limpiar texto (Gemini usa texto plano, no SSML)
+        const cleanText = cleanTextForGemini(text)
+
+        // Prompt de estilo (persona del locutor chileno)
+        const stylePrompt = `Actúa como un locutor de radio de una emisora juvenil en Santiago de Chile. Tu tono debe ser el de un locutor profesional ameno, cercano y creíble. Utiliza una entonación chilena natural: marca bien las subidas de tono al final de las preguntas. Usa un lenguaje coloquial pero profesional.`
+
+        console.log(`   🎤 Gemini TTS: ${geminiVoice}, Model: gemini-2.5-pro-tts (OAuth2)`)
+
+        const response = await fetch('https://texttospeech.googleapis.com/v1beta1/text:synthesize', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken.token}`
+            },
             body: JSON.stringify({
-                input: { ssml: ssmlText },
-                voice: {
-                    languageCode,
-                    name: voiceConfig.id,
-                    ssmlGender: voiceConfig.ssmlGender
-                },
                 audioConfig: {
-                    audioEncoding: 'MP3',
-                    sampleRateHertz: 24000,
-                    speakingRate,
-                    pitch: finalPitch,
-                    // Perfil optimizado: elimina tonos metálicos, ecualiza medios
-                    effectsProfileId: ['medium-bluetooth-speaker-class-device']
+                    audioEncoding: "LINEAR16",
+                    pitch: voiceSettings?.pitch || 0,
+                    speakingRate: 1 + ((voiceSettings?.speed || 0) / 100)
+                },
+                input: {
+                    prompt: stylePrompt,
+                    text: cleanText
+                },
+                voice: {
+                    languageCode: "es-419",
+                    modelName: "gemini-2.5-pro-tts",
+                    name: geminiVoice
                 }
             })
         })
@@ -323,7 +352,7 @@ async function generateTTSAudio(
             const BYTES_PER_SECOND = 8000  // Calibrado 2024-12-29 (antes 7500)
             const realDuration = Math.round(audioBuffer.length / BYTES_PER_SECOND)
 
-            console.log(`   ✅ Audio Pro: ${audioBuffer.length} bytes, ${realDuration}s REAL, pitch=${finalPitch}`)
+            console.log(`   ✅ Audio Gemini: ${audioBuffer.length} bytes, ${realDuration}s, voice=${geminiVoice}`)
 
             return {
                 success: true,
