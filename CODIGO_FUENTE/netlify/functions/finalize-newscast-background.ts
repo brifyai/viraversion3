@@ -76,10 +76,7 @@ function sanitizeTextForTTS(text: string): string {
 const VOICE_CONFIG: Record<string, { id: string; wpm: number; ssmlGender: 'MALE' | 'FEMALE' }> = {
     'es-US-Neural2-A': { id: 'es-US-Neural2-A', wpm: 152, ssmlGender: 'FEMALE' },  // Sofía
     'es-US-Neural2-B': { id: 'es-US-Neural2-B', wpm: 157, ssmlGender: 'MALE' },    // Carlos
-    'es-US-Neural2-C': { id: 'es-US-Neural2-C', wpm: 166, ssmlGender: 'MALE' },    // Diego
-    'es-US-Neural2-D': { id: 'es-US-Neural2-D', wpm: 175, ssmlGender: 'MALE' },    // Miguel
-    'es-US-Neural2-E': { id: 'es-US-Neural2-E', wpm: 170, ssmlGender: 'FEMALE' },  // Laura
-    'es-US-Neural2-F': { id: 'es-US-Neural2-F', wpm: 160, ssmlGender: 'FEMALE' },  // Ana
+    'es-US-Neural2-C': { id: 'es-US-Neural2-C', wpm: 166, ssmlGender: 'MALE' }     // Diego
 }
 
 // Diccionario de símbolos seguros (se pueden reemplazar globalmente)

@@ -216,30 +216,6 @@ export const GOOGLE_CLOUD_VOICES = {
     ssmlGender: 'MALE',
     wpm: 166,  // CALIBRADO 2024-12-27 + ajuste SSML (176 * 0.94)
     description: 'Voz masculina clara y articulada'
-  },
-  'es-US-Neural2-D': {
-    id: 'es-US-Neural2-D',
-    name: 'Miguel (Hombre - Noticiosa)',
-    languageCode: 'es-US',
-    ssmlGender: 'MALE',
-    wpm: 175,
-    description: 'Voz masculina estilo noticiero profesional'
-  },
-  'es-US-Neural2-E': {
-    id: 'es-US-Neural2-E',
-    name: 'Laura (Mujer - Dinámica)',
-    languageCode: 'es-US',
-    ssmlGender: 'FEMALE',
-    wpm: 170,
-    description: 'Voz femenina dinámica y expresiva'
-  },
-  'es-US-Neural2-F': {
-    id: 'es-US-Neural2-F',
-    name: 'Ana (Mujer - Calmada)',
-    languageCode: 'es-US',
-    ssmlGender: 'FEMALE',
-    wpm: 160,
-    description: 'Voz femenina tranquila y relajante'
   }
 };
 

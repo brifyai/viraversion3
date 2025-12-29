@@ -36,36 +36,6 @@ export async function GET() {
                 wpm: 166,  // AJUSTADO con pausas SSML
                 ssmlGender: 'MALE',
                 description: 'Voz masculina clara y articulada'
-            },
-            {
-                id: 'es-US-Neural2-D',
-                name: '🎙️ Miguel (Hombre - Noticiosa)',
-                language: 'es-US',
-                type: 'google-cloud',
-                isUserVoice: false,
-                wpm: 175,
-                ssmlGender: 'MALE',
-                description: 'Voz masculina estilo noticiero profesional'
-            },
-            {
-                id: 'es-US-Neural2-E',
-                name: '🎙️ Laura (Mujer - Dinámica)',
-                language: 'es-US',
-                type: 'google-cloud',
-                isUserVoice: false,
-                wpm: 170,
-                ssmlGender: 'FEMALE',
-                description: 'Voz femenina dinámica y expresiva'
-            },
-            {
-                id: 'es-US-Neural2-F',
-                name: '🎙️ Ana (Mujer - Calmada)',
-                language: 'es-US',
-                type: 'google-cloud',
-                isUserVoice: false,
-                wpm: 160,
-                ssmlGender: 'FEMALE',
-                description: 'Voz femenina tranquila y relajante'
             }
         ] : []
 
